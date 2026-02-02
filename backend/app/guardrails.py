@@ -61,10 +61,25 @@ async def validate_input(user_input: str) -> bool:
         return False
 
 
-response_guardrail_system_prompt = """You are a response safety guardrail.
-Analyze the assistant's response.
-If the response contains harmful content, PII, or is hallucinating wildly (if you can tell), return "UNSAFE".
-Otherwise, return "SAFE".
+response_guardrail_system_prompt = """You are a medical response quality guardrail for MediAssistant.
+Analyze the assistant's response for quality and appropriateness.
+
+ACCEPT (return "SAFE") if the response:
+- Provides medical/health information accurately
+- Stays within the medical domain
+- Includes appropriate medical disclaimers when giving health advice
+- Is evidence-based and factual
+- Maintains professional medical communication standards
+
+REJECT (return "UNSAFE") if the response:
+- Strays from medical topics into unrelated domains
+- Provides potentially harmful medical misinformation
+- Contains personal identifiable information (PII)
+- Makes definitive diagnoses without proper disclaimers
+- Replaces professional medical consultation inappropriately
+- Contains harmful content or promotes dangerous practices
+
+Only return the single word "SAFE" or "UNSAFE".
 """
 
 response_validation_prompt = ChatPromptTemplate.from_messages(
@@ -76,9 +91,23 @@ response_guardrail_chain = response_validation_prompt | llm | StrOutputParser()
 
 async def validate_response(response_text: str) -> bool:
     """
-    Validates the assistant's response using an LLM-based guardrail.
-    Returns True if safe, False if unsafe.
-    Note: Currently disabled for streaming support.
+    Validates the assistant's response using a medical-domain guardrail.
+
+    Checks that responses:
+    - Stay within medical/health topics
+    - Provide accurate, evidence-based information
+    - Include appropriate medical disclaimers
+    - Maintain professional standards
+    - Don't contain PII or harmful misinformation
+
+    Args:
+        response_text: The AI-generated response to validate
+
+    Returns:
+        True if the response passes quality checks, False otherwise
+
+    Note: Currently designed for non-streaming scenarios. In streaming mode,
+    quality is ensured through the system prompt and input guardrails.
     """
     try:
         result = await response_guardrail_chain.ainvoke({"response": response_text})
