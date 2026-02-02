@@ -1,7 +1,7 @@
 from typing import Annotated, Literal, TypedDict
 import logging
 
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -20,6 +20,26 @@ class State(TypedDict):
 
 
 llm = ChatOpenAI(model=settings.MODEL_NAME, api_key=settings.OPENAI_API_KEY)
+
+# Medical assistant system prompt
+SYSTEM_PROMPT = """You are MediAssistant, an AI medical assistant designed to help with medical and health-related questions.
+
+Your expertise includes:
+- Medical conditions, diseases, symptoms, and diagnoses
+- Medications, treatments, and therapies
+- Medical studies, research, and clinical trials
+- Health and wellness topics
+- Anatomy, physiology, and medical science
+- Healthcare procedures and medical information
+
+Guidelines:
+1. Provide accurate, evidence-based medical information
+2. Always remind users to consult healthcare professionals for personalized medical advice
+3. Be clear about the limitations of AI-based medical information
+4. Use clear, understandable language while maintaining medical accuracy
+5. Cite medical studies or research when relevant
+
+Remember: You are an informational tool, not a replacement for professional medical care."""
 
 
 async def check_input(state: State):
@@ -52,13 +72,19 @@ async def call_model(state: State):
         return {
             "messages": [
                 AIMessage(
-                    content="I cannot process that request due to safety policies."
+                    content="I apologize, but I can only assist with medical and health-related questions."
                 )
             ]
         }
 
     logger.debug("Invoking LLM...")
-    response = await llm.ainvoke(state["messages"])
+
+    # Prepend system message if not already present
+    messages = state["messages"]
+    if not messages or not isinstance(messages[0], SystemMessage):
+        messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+
+    response = await llm.ainvoke(messages)
     logger.debug(f"LLM response received: {len(response.content)} characters")
 
     # Output guardrail removed for streaming support
@@ -75,7 +101,7 @@ async def unsafe_input_response(state: State):
     return {
         "messages": [
             AIMessage(
-                content="I cannot process that request as it violates safety guidelines."
+                content="I apologize, but I can only assist with medical and health-related questions. As MediAssistant, I'm designed to help with topics like medical conditions, symptoms, treatments, medications, and health research. Please ask me a question related to medical or health topics."
             )
         ]
     }
