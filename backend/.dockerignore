@@ -1,52 +1,39 @@
-# Dockerignore for backend
-
-# Python
+# Tests
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-*.egg-info/
-dist/
-build/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
+*.db-journal
 
-# Virtual environments
+# Environment
+.env
 .venv/
 venv/
-ENV/
+.python-version
 
-# IDEs
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# Environment files
-.env
-.env.local
+# Build
+dist/
+build/
+*.egg-info/
 
-# Database (will use volume)
-*.db
-*.db-shm
-*.db-wal
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+terraform/tfplan
 
-# Logs
-*.log
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Git
-.git/
-.gitignore
-
-# Documentation
-README.md
-docs/
-
-# Other
+# Misc
 .DS_Store
-*.md
+*.log
