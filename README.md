@@ -1,6 +1,6 @@
 # MediAssistant
 
-> An intelligent medical assistant powered by GPT-4o-mini with built-in safety guardrails, JWT authentication, and cross-platform mobile support.
+> An intelligent medical assistant powered by GPT-4o-mini with built-in safety guardrails and cross-platform mobile support.
 
 ## 📋 Overview
 
@@ -8,7 +8,7 @@ MediAssistant is a production-ready, full-stack medical chatbot application that
 - **AI-powered conversational agent** using LangGraph and OpenAI
 - **Safety-first design** with input/output validation guardrails
 - **Cross-platform mobile app** (iOS, Android, Web) built with React Native + Expo
-- **Enterprise security** features including JWT authentication and rate limiting
+- **Enterprise security** features including strict header validation and rate limiting
 - **Cloud-ready deployment** optimized for Google Cloud Run
 
 ## ✨ Key Features
@@ -17,7 +17,7 @@ MediAssistant is a production-ready, full-stack medical chatbot application that
 - 🛡️ **Safety Guardrails** - LLM-based input validation to ensure medical relevance
 - 💬 **Thread Management** - Multi-conversation support with persistent history
 - ⚡ **Real-time Streaming** - Token-by-token response streaming
-- 🔐 **JWT Authentication** - Secure user sessions
+- 🔐 **Anonymous Security** - Simple `X-User-ID` header-based session isolation
 - 🚦 **Rate Limiting** - Protection against abuse (10-30 req/min)
 - 📱 **Cross-Platform** - Single codebase for iOS, Android, and Web
 - 🎨 **Material Design 3** - Modern, polished UI
@@ -34,7 +34,7 @@ MediAssistant is a production-ready, full-stack medical chatbot application that
 │  • AsyncStorage for local persistence               │
 └───────────────────┬─────────────────────────────────┘
                     │ REST API + Streaming
-                    │ JWT Authentication
+                    │ Anonymous X-User-ID Header
 ┌───────────────────▼─────────────────────────────────┐
 │              Backend (FastAPI)                      │
 │  • LangGraph State Machine                          │
@@ -51,7 +51,7 @@ MediAssistant is a production-ready, full-stack medical chatbot application that
 - LangChain & LangGraph (AI agent orchestration)
 - OpenAI GPT-4o-mini
 - SQLite (with PostgreSQL support for production)
-- JWT authentication (python-jose)
+- HTTP header validation
 - Rate limiting (SlowAPI)
 - Uvicorn (ASGI server)
 
@@ -186,8 +186,7 @@ npm start
 
 ## 🔐 Security Features
 
-- ✅ **JWT Authentication** - Secure token-based sessions
-- ✅ **Password Hashing** - Argon2 algorithm
+- ✅ **Anonymous Sessions** - Secure header-based (`X-User-ID`) tracking
 - ✅ **Rate Limiting** - Per-IP limits on all endpoints
 - ✅ **CORS Configuration** - Restricted origins
 - ✅ **Security Headers** - X-Frame-Options, CSP, XSS Protection
@@ -251,28 +250,9 @@ gcloud run deploy medi-assistant \
 
 ## 📚 API Documentation
 
-### Authentication
-
-```bash
-# Register
-POST /api/v1/register
-{
-  "username": "user@example.com",
-  "password": "secure_password"
-}
-
-# Login
-POST /api/v1/login
-{
-  "username": "user@example.com",
-  "password": "secure_password"
-}
-# Returns: { "access_token": "...", "token_type": "bearer" }
-```
-
 ### Chat Endpoints
 
-All chat endpoints require `Authorization: Bearer <token>` header.
+All chat endpoints require an `X-User-ID: <uuid>` header to isolate and retrieve the correct history.
 
 ```bash
 # Send message (streaming response)
@@ -364,7 +344,7 @@ docker-compose up
 **Implemented:**
 - ✅ AI chat with streaming
 - ✅ Multi-thread support
-- ✅ JWT authentication
+- ✅ Anonymous session tracking
 - ✅ Safety guardrails
 - ✅ Mobile app (iOS/Android/Web)
 - ✅ Docker deployment

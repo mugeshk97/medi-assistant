@@ -13,7 +13,7 @@ from app.db import (
     get_thread_by_id,
     delete_thread,
 )
-from app.deps import get_graph
+from app.deps import get_graph, get_current_user
 from app.errors import UnauthorizedError, ThreadNotFoundError
 from langchain_core.messages import HumanMessage
 from typing import List
@@ -42,6 +42,7 @@ async def verify_thread_ownership(thread_id: str, user_id: str) -> None:
 async def chat(
     request: Request,
     chat_request: ChatRequest,
+    user_id: str = Depends(get_current_user),
     graph=Depends(get_graph),
 ):
     """
@@ -50,9 +51,6 @@ async def chat(
     Rate limit: 10 requests per minute per IP.
     """
     try:
-        # Dynamic user identification
-        user_id = chat_request.user_id
-
         # Check if this is the first message in the thread
         config = {"configurable": {"thread_id": chat_request.thread_id}}
         state_snapshot = await graph.aget_state(config)
@@ -118,7 +116,7 @@ async def generate_thread_title(first_message: str, max_length: int = 50) -> str
 @limiter.limit("30/minute")
 async def list_threads(
     request: Request,
-    user_id: str,
+    user_id: str = Depends(get_current_user),
 ):
     """
     List all threads for the requested user.
@@ -140,7 +138,7 @@ async def list_threads(
 async def get_history(
     request: Request,
     thread_id: str,
-    user_id: str,
+    user_id: str = Depends(get_current_user),
     graph=Depends(get_graph),
 ):
     """
@@ -169,7 +167,9 @@ async def get_history(
 
 @router.delete("/threads/{thread_id}")
 @limiter.limit("10/minute")
-async def delete_thread_endpoint(request: Request, thread_id: str, user_id: str):
+async def delete_thread_endpoint(
+    request: Request, thread_id: str, user_id: str = Depends(get_current_user)
+):
     """
     Delete a thread and its associated data.
 

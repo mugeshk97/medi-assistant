@@ -27,8 +27,8 @@ async def test_chat_endpoint_works_without_auth(client):
         json={
             "message": "Hello",
             "thread_id": "thread-123-abc",
-            "user_id": "test_user_789",
         },
+        headers={"X-User-ID": "test_user_789"},
     )
     # Should return 200 or streaming response
     assert response.status_code in [200, 429]  # 429 if rate limited
@@ -42,8 +42,8 @@ async def test_chat_endpoint_validation(client):
         json={
             "message": "",  # Empty message should fail
             "thread_id": "invalid",  # Invalid format
-            "user_id": "invalid@#$%",  # Invalid format
         },
+        headers={"X-User-ID": "test_user"},
     )
     # Should fail validation
     assert response.status_code == 422
@@ -51,7 +51,7 @@ async def test_chat_endpoint_validation(client):
 
 def test_list_threads(client):
     """Test list threads endpoint."""
-    response = client.get("/api/v1/threads?user_id=test_user_789")
+    response = client.get("/api/v1/threads", headers={"X-User-ID": "test_user_789"})
     assert response.status_code in [200, 429]  # 200 or rate limited
 
 

@@ -22,13 +22,6 @@ class ChatRequest(BaseModel):
         pattern=r"^thread-\d+-[a-zA-Z0-9]+$",
         description="Unique thread identifier",
     )
-    user_id: str = Field(
-        ...,
-        min_length=1,
-        max_length=100,
-        pattern=r"^[a-zA-Z0-9_-]+$",
-        description="Unique user identifier",
-    )
 
     @field_validator("message")
     @classmethod
