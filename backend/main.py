@@ -9,7 +9,6 @@ from app.graph import builder
 from app.settings import get_settings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -38,9 +37,30 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing databases...")
     await init_db()
 
-    # Initialize async persistence
+    # Initialize async persistence based on driver
     logger.info("Initializing LangGraph checkpointer...")
-    async with AsyncSqliteSaver.from_conn_string("chat_history.db") as checkpointer:
+
+    # LangGraph bindings
+    if settings.DATABASE_URL.startswith("postgres"):
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+        checkpointer_cls = AsyncPostgresSaver
+    else:
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        checkpointer_cls = AsyncSqliteSaver
+
+    # Strip prefixes if sqlite to maintain current behavior
+    checkpointer_url = (
+        settings.DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
+        if not settings.DATABASE_URL.startswith("postgres")
+        else settings.DATABASE_URL
+    )
+
+    async with checkpointer_cls.from_conn_string(checkpointer_url) as checkpointer:
+        # Create checkpointer DB tabels if they don't exist
+        await checkpointer.setup()
+
         # Compile graph with checkpointer
         app.state.graph = builder.compile(checkpointer=checkpointer)
         logger.info("MediAssistant backend started successfully")
