@@ -1,5 +1,6 @@
 """API endpoints for chat management."""
 
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from slowapi import Limiter
@@ -188,10 +189,19 @@ async def delete_thread_endpoint(
     try:
         # 1. Deep delete LangGraph state memory natively
         if hasattr(graph, "checkpointer") and graph.checkpointer is not None:
-            if hasattr(graph.checkpointer, "adelete_thread"):
-                await graph.checkpointer.adelete_thread(config)
-            else:
-                logger.warning("LangGraph Checkpointer does not support adelete_thread")
+            try:
+                if hasattr(graph.checkpointer, "adelete_thread"):
+                    await graph.checkpointer.adelete_thread(config)
+                elif hasattr(graph.checkpointer, "delete_thread"):
+                    await asyncio.to_thread(graph.checkpointer.delete_thread, thread_id)
+                else:
+                    logger.warning(
+                        "LangGraph Checkpointer does not support adelete_thread or delete_thread"
+                    )
+            except NotImplementedError:
+                logger.warning(
+                    "LangGraph Checkpointer delete_thread is not implemented in this version"
+                )
 
         # 2. Delete metadata from SQLite DB
         await delete_thread(thread_id)
@@ -217,12 +227,24 @@ async def delete_all_threads_endpoint(
 
         # Sequentially destroy each LangGraph memory blob natively
         if hasattr(graph, "checkpointer") and graph.checkpointer is not None:
-            if hasattr(graph.checkpointer, "adelete_thread"):
-                for thread in threads:
-                    config = {"configurable": {"thread_id": thread["thread_id"]}}
-                    await graph.checkpointer.adelete_thread(config)
-            else:
-                logger.warning("LangGraph Checkpointer does not support adelete_thread")
+            try:
+                if hasattr(graph.checkpointer, "adelete_thread"):
+                    for thread in threads:
+                        config = {"configurable": {"thread_id": thread["thread_id"]}}
+                        await graph.checkpointer.adelete_thread(config)
+                elif hasattr(graph.checkpointer, "delete_thread"):
+                    for thread in threads:
+                        await asyncio.to_thread(
+                            graph.checkpointer.delete_thread, thread["thread_id"]
+                        )
+                else:
+                    logger.warning(
+                        "LangGraph Checkpointer does not support adelete_thread or delete_thread"
+                    )
+            except NotImplementedError:
+                logger.warning(
+                    "LangGraph Checkpointer delete_thread is not implemented in this version"
+                )
 
         # After deep deletion, wipe the fast generic DB metadata table perfectly
         await delete_all_user_threads(user_id)

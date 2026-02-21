@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -5,10 +6,12 @@ from contextlib import asynccontextmanager
 import uvicorn
 from app.api import router
 from app.db import db_pool, init_db
+from app.errors import MediAssistantError, ThreadNotFoundError, UnauthorizedError
 from app.graph import builder
 from app.settings import get_settings
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -40,32 +43,45 @@ async def lifespan(app: FastAPI):
     # Initialize async persistence based on driver
     logger.info("Initializing LangGraph checkpointer...")
 
-    # LangGraph bindings
-    if settings.DATABASE_URL.startswith("postgres"):
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-        checkpointer_cls = AsyncPostgresSaver
-    else:
-        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-
-        checkpointer_cls = AsyncSqliteSaver
-
-    # Strip prefixes if sqlite to maintain current behavior
-    checkpointer_url = (
-        settings.DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
-        if not settings.DATABASE_URL.startswith("postgres")
-        else settings.DATABASE_URL
+    # Use langchain-google-cloud-sql-pg which natively handles the Cloud SQL
+    # Connector, psycopg3, and LangGraph checkpointing in one cohesive API.
+    from langchain_google_cloud_sql_pg import PostgresEngine
+    from langchain_google_cloud_sql_pg import (
+        PostgresSaver as CloudSQLPostgresSaver,
     )
 
-    async with checkpointer_cls.from_conn_string(checkpointer_url) as checkpointer:
-        # Create checkpointer DB tabels if they don't exist
-        await checkpointer.setup()
+    # CLOUD_SQL_CONNECTION_NAME is "project:region:instance"
+    project_id, region, instance = settings.CLOUD_SQL_CONNECTION_NAME.split(":")
 
-        # Compile graph with checkpointer
-        app.state.graph = builder.compile(checkpointer=checkpointer)
-        logger.info("MediAssistant backend started successfully")
-        yield
-        logger.info("Shutting down MediAssistant backend")
+    # create_sync builds the engine using Cloud SQL IAM / user+password auth
+    engine = await asyncio.to_thread(
+        PostgresEngine.from_instance,
+        project_id=project_id,
+        region=region,
+        instance=instance,
+        database=settings.DB_NAME,
+        user=settings.DB_USER,
+        password=settings.DB_PASS,
+    )
+
+    # init_checkpoint_table creates LangGraph checkpoint tables if absent.
+    # It does not use IF NOT EXISTS, so we catch DuplicateTable on restarts.
+    try:
+        await asyncio.to_thread(engine.init_checkpoint_table)
+    except Exception as e:
+        if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
+            logger.info("LangGraph checkpoint tables already exist — skipping init")
+        else:
+            raise
+
+    checkpointer = CloudSQLPostgresSaver.create_sync(engine)
+    app.state.graph = builder.compile(checkpointer=checkpointer)
+    logger.info(
+        "MediAssistant started with Cloud SQL (langchain-google-cloud-sql-pg) checkpointer"
+    )
+    yield
+    logger.info("Shutting down MediAssistant backend")
+    await engine.close()
 
     # Cleanup
     await db_pool.close()
@@ -79,6 +95,22 @@ settings = get_settings()
 # Configure rate limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(ThreadNotFoundError)
+async def thread_not_found_handler(request: Request, exc: ThreadNotFoundError):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(UnauthorizedError)
+async def unauthorized_handler(request: Request, exc: UnauthorizedError):
+    return JSONResponse(status_code=403, content={"detail": str(exc)})
+
+
+@app.exception_handler(MediAssistantError)
+async def medi_assistant_error_handler(request: Request, exc: MediAssistantError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
 
 # Enable CORS with restrictions
 app.add_middleware(

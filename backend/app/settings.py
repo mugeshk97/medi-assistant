@@ -24,10 +24,14 @@ class Settings(BaseSettings):
         default="*", description="Comma-separated list of allowed CORS origins"
     )
 
-    # Database Configuration
-    DATABASE_URL: str = Field(
-        default="sqlite:///./chat_history.db", description="Database connection URL"
+    # Google Cloud SQL Configuration
+    CLOUD_SQL_CONNECTION_NAME: str | None = Field(
+        default=None,
+        description="Cloud SQL Instance Connection Name (project:region:instance)",
     )
+    DB_USER: str | None = Field(default=None, description="Cloud SQL Database User")
+    DB_PASS: str | None = Field(default=None, description="Cloud SQL Database Password")
+    DB_NAME: str | None = Field(default=None, description="Cloud SQL Database Name")
 
     # Logging Configuration
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")

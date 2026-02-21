@@ -10,19 +10,16 @@ dependencies = [
     "langchain-core>=1.2.7",
     "langchain-openai>=1.1.7",
     "langgraph>=1.0.7",
-    "langgraph-checkpoint-sqlite>=3.0.3",
-    "langgraph-checkpoint-postgres>=3.0.3",  # PostgreSQL checkpointer for LangGraph
     "openai>=2.16.0",
     "pydantic>=2.12.5",
     "python-dotenv>=1.2.1",
     "uvicorn>=0.40.0",
     "slowapi>=0.1.9",
     "asyncpg>=0.29.0",  # PostgreSQL async driver
-    "sqlalchemy[asyncio]>=2.0.0",  # ORM with async support
-    "cloud-sql-python-connector[asyncpg]>=1.5.0",  # Google Cloud SQL connector
+    "cloud-sql-python-connector[asyncpg]>=1.5.0",  # Google Cloud SQL connector (asyncpg only)
     "google-cloud-logging>=3.10.0",  # Structured logging for GCP
     "google-cloud-secret-manager>=2.20.0",  # Secret Manager integration
-    "psycopg2-binary>=2.9.11",
+    "langchain-google-cloud-sql-pg>=0.15.0",  # LangGraph checkpointer via Cloud SQL
 ]
 
 [project.optional-dependencies]

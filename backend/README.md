@@ -286,21 +286,18 @@ mypy app
 | `LOG_LEVEL` | Logging level | `INFO` |
 | `RATE_LIMIT_ENABLED` | Enable rate limiting | `true` |
 | `SECRET_KEY` | JWT secret key | Auto-generated |
-| `DATABASE_URL` | Database connection string | `sqlite://./chat_history.db` |
+| `CLOUD_SQL_CONNECTION_NAME` | Cloud SQL instance | `project:region:instance` |
 
 ### Database
 
 **SQLite (Development):**
-- Automatically created at `chat_history.db`
-- No setup required
-
 **PostgreSQL (Production):**
 ```bash
-# Set DATABASE_URL
-export DATABASE_URL="postgresql+asyncpg://user:pass@host:5432/dbname"
-
-# For Google Cloud SQL
-export DATABASE_URL="postgresql+asyncpg://user:pass@/dbname?host=/cloudsql/project:region:instance"
+# Set Cloud SQL credentials
+export CLOUD_SQL_CONNECTION_NAME="project:region:instance"
+export DB_USER="postgres"
+export DB_PASS="password"
+export DB_NAME="mediassistant"
 ```
 
 ## 🐳 Docker Deployment
@@ -375,7 +372,10 @@ gcloud sql databases create mediassistant --instance=medi-assistant-db
 # 3. Set connection in Cloud Run
 gcloud run services update medi-assistant \
   --add-cloudsql-instances PROJECT_ID:us-central1:medi-assistant-db \
-  --set-env-vars DATABASE_URL="postgresql+asyncpg://user:pass@/mediassistant?host=/cloudsql/PROJECT_ID:us-central1:medi-assistant-db"
+  --set-env-vars CLOUD_SQL_CONNECTION_NAME="PROJECT_ID:us-central1:medi-assistant-db" \
+  --set-env-vars DB_USER="postgres" \
+  --set-env-vars DB_PASS="your-secure-password" \
+  --set-env-vars DB_NAME="mediassistant"
 ```
 
 ## 🔐 Security Best Practices
