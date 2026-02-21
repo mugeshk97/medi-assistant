@@ -256,14 +256,14 @@ All chat endpoints require an `X-User-ID: <uuid>` header to isolate and retrieve
 
 ```bash
 # Send message (streaming response)
-POST /api/v1/chat
-{
-  "thread_id": "thread-123",
-  "message": "What are the symptoms of flu?"
-}
-
-# List threads
-GET /api/v1/threads
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "X-User-ID: your-uuid-here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What are the symptoms of flu?",
+    "thread_id": "thread-123"
+  }'
+```GET /api/v1/threads
 
 # Get chat history
 GET /api/v1/history/{thread_id}

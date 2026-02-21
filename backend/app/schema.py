@@ -19,8 +19,7 @@ class ChatRequest(BaseModel):
         ...,
         min_length=1,
         max_length=100,
-        pattern=r"^thread-\d+-[a-zA-Z0-9]+$",
-        description="Unique thread identifier",
+        description="Required unique thread identifier managed by the client.",
     )
 
     @field_validator("message")

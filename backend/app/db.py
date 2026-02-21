@@ -175,3 +175,22 @@ async def delete_thread(thread_id: str):
     except Exception as e:
         logger.error(f"Error deleting thread {thread_id}: {str(e)}", exc_info=True)
         raise
+
+
+async def delete_all_user_threads(user_id: str):
+    """
+    Delete all threads for a specific user from the database.
+    """
+    try:
+        async with db_pool.get_connection() as db:
+            await db.execute(
+                "DELETE FROM user_threads WHERE user_id = ?",
+                (user_id,),
+            )
+            await db.commit()
+            logger.info(f"Deleted all threads for user {user_id}")
+    except Exception as e:
+        logger.error(
+            f"Error deleting all threads for user {user_id}: {str(e)}", exc_info=True
+        )
+        raise

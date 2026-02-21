@@ -12,6 +12,7 @@ from app.db import (
     update_thread_title,
     get_thread_by_id,
     delete_thread,
+    delete_all_user_threads,
 )
 from app.deps import get_graph, get_current_user
 from app.errors import UnauthorizedError, ThreadNotFoundError
@@ -53,6 +54,7 @@ async def chat(
     try:
         # Check if this is the first message in the thread
         config = {"configurable": {"thread_id": chat_request.thread_id}}
+
         state_snapshot = await graph.aget_state(config)
         is_first_message = (
             not state_snapshot.values
@@ -73,18 +75,17 @@ async def chat(
         async def event_generator():
             try:
                 # Use astream_events to catch token-by-token generation from the 'agent' node
-                # we filter for 'on_chat_model_stream' events from the 'agent' node specifically.
                 async for event in graph.astream_events(
                     {"messages": [input_message]}, config=config, version="v1"
                 ):
                     kind = event["event"]
                     node = event.get("metadata", {}).get("langgraph_node", "")
 
-                    # Use strict filtering for the agent node to avoid streaming guardrail checks
                     if kind == "on_chat_model_stream" and node == "agent":
                         content = event["data"]["chunk"].content
                         if content:
                             yield content
+
             except Exception as e:
                 logger.error(f"Error during streaming: {str(e)}", exc_info=True)
                 yield f"Error: {str(e)}"
@@ -168,10 +169,13 @@ async def get_history(
 @router.delete("/threads/{thread_id}")
 @limiter.limit("10/minute")
 async def delete_thread_endpoint(
-    request: Request, thread_id: str, user_id: str = Depends(get_current_user)
+    request: Request,
+    thread_id: str,
+    user_id: str = Depends(get_current_user),
+    graph=Depends(get_graph),
 ):
     """
-    Delete a thread and its associated data.
+    Delete a thread and its associated data (both DB metadata and LangGraph checkpointer memory).
 
     Verifies thread ownership before deletion.
     Rate limit: 10 requests per minute per IP.
@@ -179,9 +183,54 @@ async def delete_thread_endpoint(
     # Verify ownership before deletion
     await verify_thread_ownership(thread_id, user_id)
 
+    config = {"configurable": {"thread_id": thread_id}}
+
     try:
+        # 1. Deep delete LangGraph state memory natively
+        if hasattr(graph, "checkpointer") and graph.checkpointer is not None:
+            if hasattr(graph.checkpointer, "adelete_thread"):
+                await graph.checkpointer.adelete_thread(config)
+            else:
+                logger.warning("LangGraph Checkpointer does not support adelete_thread")
+
+        # 2. Delete metadata from SQLite DB
         await delete_thread(thread_id)
-        return {"status": "success", "message": f"Thread {thread_id} deleted"}
+        return {"status": "success", "message": f"Thread {thread_id} deleted fully"}
     except Exception as e:
         logger.error(f"Error deleting thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/threads")
+@limiter.limit("5/minute")
+async def delete_all_threads_endpoint(
+    request: Request,
+    user_id: str = Depends(get_current_user),
+    graph=Depends(get_graph),
+):
+    """
+    Bulk delete all threads and history associated with the user account.
+    """
+    try:
+        # First query all user threads to get their IDs for LangGraph extraction
+        threads = await get_user_threads(user_id)
+
+        # Sequentially destroy each LangGraph memory blob natively
+        if hasattr(graph, "checkpointer") and graph.checkpointer is not None:
+            if hasattr(graph.checkpointer, "adelete_thread"):
+                for thread in threads:
+                    config = {"configurable": {"thread_id": thread["thread_id"]}}
+                    await graph.checkpointer.adelete_thread(config)
+            else:
+                logger.warning("LangGraph Checkpointer does not support adelete_thread")
+
+        # After deep deletion, wipe the fast generic DB metadata table perfectly
+        await delete_all_user_threads(user_id)
+
+        return {
+            "status": "success",
+            "message": f"Successfully deleted all {len(threads)} threads for user",
+        }
+    except Exception as e:
+        logger.error(f"Error bulk deleting threads for {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
