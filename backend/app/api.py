@@ -15,7 +15,6 @@ from app.db import (
 )
 from app.deps import get_graph
 from app.errors import UnauthorizedError, ThreadNotFoundError
-from app.auth_api import get_current_user
 from langchain_core.messages import HumanMessage
 from typing import List
 import logging
@@ -43,18 +42,16 @@ async def verify_thread_ownership(thread_id: str, user_id: str) -> None:
 async def chat(
     request: Request,
     chat_request: ChatRequest,
-    current_user: dict = Depends(get_current_user),
     graph=Depends(get_graph),
 ):
     """
     Process a chat message through the LangGraph agent and stream the response.
 
-    User is automatically authenticated via JWT token.
     Rate limit: 10 requests per minute per IP.
     """
     try:
-        # Get user ID from authenticated token
-        user_id = current_user["id"]
+        # Dynamic user identification
+        user_id = chat_request.user_id
 
         # Check if this is the first message in the thread
         config = {"configurable": {"thread_id": chat_request.thread_id}}
@@ -120,15 +117,14 @@ async def generate_thread_title(first_message: str, max_length: int = 50) -> str
 @router.get("/threads", response_model=List[Thread])
 @limiter.limit("30/minute")
 async def list_threads(
-    request: Request, current_user: dict = Depends(get_current_user)
+    request: Request,
+    user_id: str,
 ):
     """
-    List all threads for the authenticated user.
+    List all threads for the requested user.
 
-    User is automatically identified via JWT token.
     Rate limit: 30 requests per minute per IP.
     """
-    user_id = current_user["id"]
     try:
         threads = await get_user_threads(user_id)
         return threads
@@ -144,7 +140,7 @@ async def list_threads(
 async def get_history(
     request: Request,
     thread_id: str,
-    current_user: dict = Depends(get_current_user),
+    user_id: str,
     graph=Depends(get_graph),
 ):
     """
@@ -153,7 +149,6 @@ async def get_history(
     Verifies thread ownership before returning history.
     Rate limit: 30 requests per minute per IP.
     """
-    user_id = current_user["id"]
     # Verify ownership
     await verify_thread_ownership(thread_id, user_id)
 
@@ -174,9 +169,7 @@ async def get_history(
 
 @router.delete("/threads/{thread_id}")
 @limiter.limit("10/minute")
-async def delete_thread_endpoint(
-    request: Request, thread_id: str, current_user: dict = Depends(get_current_user)
-):
+async def delete_thread_endpoint(request: Request, thread_id: str, user_id: str):
     """
     Delete a thread and its associated data.
 
@@ -184,7 +177,6 @@ async def delete_thread_endpoint(
     Rate limit: 10 requests per minute per IP.
     """
     # Verify ownership before deletion
-    user_id = current_user["id"]
     await verify_thread_ownership(thread_id, user_id)
 
     try:

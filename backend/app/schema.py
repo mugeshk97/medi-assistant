@@ -22,6 +22,13 @@ class ChatRequest(BaseModel):
         pattern=r"^thread-\d+-[a-zA-Z0-9]+$",
         description="Unique thread identifier",
     )
+    user_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+        description="Unique user identifier",
+    )
 
     @field_validator("message")
     @classmethod
@@ -61,41 +68,3 @@ class ChatHistoryResponse(BaseModel):
 
     thread_id: str
     messages: List[Message]
-
-
-# Authentication Schemas
-
-
-class UserCreate(BaseModel):
-    """Request model for user registration."""
-
-    email: str = Field(..., min_length=3, max_length=255, description="User email")
-    username: str = Field(
-        ...,
-        min_length=3,
-        max_length=50,
-        pattern=r"^[a-zA-Z0-9_-]+$",
-        description="Username (alphanumeric, dash, underscore)",
-    )
-    password: str = Field(..., min_length=8, max_length=100, description="Password")
-
-
-class UserResponse(BaseModel):
-    """Response model for user information."""
-
-    id: str
-    email: str
-    username: str
-    created_at: datetime
-
-    class Config:
-        """Pydantic configuration."""
-
-        json_encoders = {datetime: lambda v: v.isoformat()}
-
-
-class Token(BaseModel):
-    """Response model for login endpoint."""
-
-    access_token: str
-    token_type: str = "bearer"

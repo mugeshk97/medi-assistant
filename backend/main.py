@@ -4,9 +4,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from app.api import router
-from app.auth_api import router as auth_router
 from app.db import db_pool, init_db
-from app.user_db import init_users_table
 from app.graph import builder
 from app.settings import get_settings
 from fastapi import FastAPI
@@ -39,7 +37,6 @@ async def lifespan(app: FastAPI):
     # Initialize database schema
     logger.info("Initializing databases...")
     await init_db()
-    await init_users_table()
 
     # Initialize async persistence
     logger.info("Initializing LangGraph checkpointer...")
@@ -93,7 +90,6 @@ async def add_security_headers(request, call_next):
 
 
 app.include_router(router, prefix="/api/v1")
-app.include_router(auth_router, prefix="/api/v1")
 
 
 @app.get("/health")
