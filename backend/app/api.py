@@ -87,6 +87,14 @@ async def chat(
                         if content:
                             yield content
 
+                    # The unsafe_input node returns a static message (no LLM),
+                    # so we capture it from the chain-end event instead.
+                    if kind == "on_chain_end" and node == "unsafe_input":
+                        output = event["data"].get("output", {})
+                        msgs = output.get("messages", [])
+                        if msgs:
+                            yield msgs[-1].content
+
             except Exception as e:
                 logger.error(f"Error during streaming: {str(e)}", exc_info=True)
                 yield f"Error: {str(e)}"
