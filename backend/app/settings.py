@@ -11,8 +11,19 @@ class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
 
     # OpenAI Configuration
-    OPENAI_API_KEY: str = Field(..., description="OpenAI API key")
+    OPENAI_API_KEY: str | None = Field(default=None, description="OpenAI API key")
     MODEL_NAME: str = Field(default="gpt-4o-mini", description="OpenAI model name")
+
+    # Azure OpenAI Configuration
+    AZURE_OPENAI_API_KEY: str | None = Field(
+        default=None, description="Azure OpenAI API key"
+    )
+    AZURE_OPENAI_ENDPOINT: str | None = Field(
+        default=None, description="Azure OpenAI endpoint"
+    )
+    AZURE_OPENAI_CHAT_DEPLOYMENT: str | None = Field(
+        default=None, description="Azure OpenAI chat deployment name"
+    )
 
     # Server Configuration
     ENVIRONMENT: str = Field(default="development", description="Environment name")
@@ -39,15 +50,12 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = Field(default=True, description="Enable rate limiting")
 
-    @field_validator("OPENAI_API_KEY")
+    @field_validator("OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", mode="before")
     @classmethod
-    def validate_api_key(cls, v: str) -> str:
-        """Validate OpenAI API key is set."""
-        if not v or v == "your_openai_api_key_here":
-            raise ValueError(
-                "OPENAI_API_KEY must be set in .env file. "
-                "Get your key from https://platform.openai.com/api-keys"
-            )
+    def validate_api_keys(cls, v: str | None) -> str | None:
+        """Validate API keys."""
+        if v == "your_openai_api_key_here":
+            return None
         return v
 
     @field_validator("LOG_LEVEL")

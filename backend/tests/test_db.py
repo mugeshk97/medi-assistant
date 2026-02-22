@@ -25,11 +25,15 @@ async def test_save_and_get_thread(db):
 @pytest.mark.asyncio
 async def test_get_user_threads(db):
     """Test getting all threads for a user."""
-    user_id = "test-user-789"
+    import uuid
+
+    user_id = f"test-user-{uuid.uuid4()}"
+    thread1_id = f"thread-1-{uuid.uuid4()}"
+    thread2_id = f"thread-2-{uuid.uuid4()}"
 
     # Create multiple threads
-    await save_thread("thread-1", user_id, "Thread 1")
-    await save_thread("thread-2", user_id, "Thread 2")
+    await save_thread(thread1_id, user_id, "Thread 1")
+    await save_thread(thread2_id, user_id, "Thread 2")
 
     # Get all threads
     threads = await get_user_threads(user_id)

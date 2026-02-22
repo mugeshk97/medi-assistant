@@ -1,6 +1,6 @@
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
 import logging
 
 from app.settings import get_settings
@@ -11,7 +11,15 @@ settings = get_settings()
 
 # Initialize a separate smaller/faster model for guardrails if possible,
 # but we will use the configured model for now.
-llm = ChatOpenAI(model=settings.MODEL_NAME, api_key=settings.OPENAI_API_KEY)
+if settings.AZURE_OPENAI_API_KEY:
+    llm = AzureChatOpenAI(
+        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+        azure_deployment=settings.AZURE_OPENAI_CHAT_DEPLOYMENT,
+        api_version="2024-12-01-preview",
+        api_key=settings.AZURE_OPENAI_API_KEY,
+    )
+else:
+    llm = ChatOpenAI(model=settings.MODEL_NAME, api_key=settings.OPENAI_API_KEY)
 
 guardrail_system_prompt = """You are a medical domain guardrail for MediAssistant.
 Your job is to analyze the user's input and determine if it is related to medical topics.
