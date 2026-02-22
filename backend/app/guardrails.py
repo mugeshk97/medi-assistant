@@ -2,6 +2,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 import logging
+from langchain_core.messages import BaseMessage
 
 from app.settings import get_settings
 
@@ -23,6 +24,7 @@ else:
 
 guardrail_system_prompt = """You are a medical domain guardrail for MediAssistant.
 Your job is to analyze the user's input and determine if it is related to medical topics.
+You will be provided with the conversation history. The last message is the user's current input.
 
 ACCEPT (return "SAFE") if the input is about:
 - Medical conditions, diseases, symptoms, or diagnoses
@@ -33,9 +35,10 @@ ACCEPT (return "SAFE") if the input is about:
 - Healthcare procedures or medical advice
 - Medical terminology or education
 - Public health or epidemiology
+- A valid follow-up question or response to the ongoing medical conversation (e.g., "tell me more about that", "what are the side effects of the second one?", "yes I have those symptoms").
 
 REJECT (return "UNSAFE") if the input is:
-- Completely unrelated to medical/health topics (e.g., cooking recipes, sports, weather, general knowledge)
+- Completely unrelated to medical/health topics AND not a valid follow-up to the conversation (e.g., cooking recipes, sports, weather, general knowledge)
 - Harmful content (hate speech, violence, illegal acts)
 - Gibberish or nonsensical text
 
@@ -43,23 +46,25 @@ Only return the single word "SAFE" or "UNSAFE".
 """
 
 validation_prompt = ChatPromptTemplate.from_messages(
-    [("system", guardrail_system_prompt), ("user", "{input}")]
+    [("system", guardrail_system_prompt), ("placeholder", "{messages}")]
 )
 
 guardrail_chain = validation_prompt | llm | StrOutputParser()
 
 
-async def validate_input(user_input: str) -> bool:
+async def validate_input(messages: list[BaseMessage]) -> bool:
     """
     Validates the user input using an LLM-based guardrail.
+    Takes the full conversation history to understand context for follow-up questions.
     Returns True if safe, False if unsafe.
     """
     try:
-        result = await guardrail_chain.ainvoke({"input": user_input})
+        result = await guardrail_chain.ainvoke({"messages": messages})
         is_safe = result.strip().upper() == "SAFE"
 
         if not is_safe:
-            logger.warning(f"Input blocked by guardrail: {user_input[:50]}...")
+            last_message = messages[-1].content if messages else ""
+            logger.warning(f"Input blocked by guardrail: {last_message[:50]}...")
 
         return is_safe
     except Exception as e:

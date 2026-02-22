@@ -52,15 +52,16 @@ Remember: You are an informational tool, not a replacement for professional medi
 
 async def check_input(state: State):
     """
-    Node to check if the last user message is safe.
+    Node to check if the user message is safe, taking conversation history into account.
     """
     messages = state["messages"]
+
     last_user_message = messages[-1]
 
     logger.debug(
-        f"Checking input safety for message: {last_user_message.content[:50]}..."
+        f"Checking input safety for message: {last_user_message.content[:50]}... with {len(messages)} messages of context."
     )
-    is_safe = await validate_input(last_user_message.content)
+    is_safe = await validate_input(messages)
 
     if not is_safe:
         logger.warning("Input deemed unsafe by guardrail")
