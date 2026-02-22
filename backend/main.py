@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from app.api import router
@@ -11,7 +12,8 @@ from app.graph import builder
 from app.settings import get_settings
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -118,7 +120,7 @@ app.add_middleware(
     allow_origins=settings.get_allowed_origins_list(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],  # Only necessary methods
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-User-ID"],
 )
 
 
@@ -147,6 +149,18 @@ app.include_router(router, prefix="/api/v1")
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+# Serve the chat UI
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@app.get("/")
+async def serve_ui():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def main():
