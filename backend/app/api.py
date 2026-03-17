@@ -62,14 +62,13 @@ async def chat(
             or len(state_snapshot.values.get("messages", [])) == 0
         )
 
-        # Save thread association
-        await save_thread(chat_request.thread_id, user_id)
-
-        # Generate title from first message if needed
+        # Save thread association (with title on first message, single write)
         if is_first_message:
             title = await generate_thread_title(chat_request.message)
-            await update_thread_title(chat_request.thread_id, title)
+            await save_thread(chat_request.thread_id, user_id, title)
             logger.info(f"Generated title for thread {chat_request.thread_id}: {title}")
+        else:
+            await save_thread(chat_request.thread_id, user_id)
 
         input_message = HumanMessage(content=chat_request.message)
 
@@ -211,7 +210,7 @@ async def delete_thread_endpoint(
                     "LangGraph Checkpointer delete_thread is not implemented in this version"
                 )
 
-        # 2. Delete metadata from SQLite DB
+        # 2. Delete metadata from Firestore DB
         await delete_thread(thread_id)
         return {"status": "success", "message": f"Thread {thread_id} deleted fully"}
     except Exception as e:

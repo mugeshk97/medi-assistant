@@ -15,11 +15,10 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "uvicorn>=0.40.0",
     "slowapi>=0.1.9",
-    "asyncpg>=0.29.0",  # PostgreSQL async driver
-    "cloud-sql-python-connector[asyncpg]>=1.5.0",  # Google Cloud SQL connector (asyncpg only)
     "google-cloud-logging>=3.10.0",  # Structured logging for GCP
     "google-cloud-secret-manager>=2.20.0",  # Secret Manager integration
-    "langchain-google-cloud-sql-pg>=0.15.0",  # LangGraph checkpointer via Cloud SQL
+    "google-cloud-firestore>=2.15.0",  # Firestore database client
+    "langgraph-checkpoint-firestore>=0.1.0",  # LangGraph checkpointer for Firestore
     "gunicorn>=25.1.0",
     "pytest>=9.0.2",
 ]

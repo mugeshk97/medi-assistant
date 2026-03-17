@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import List
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -35,14 +35,15 @@ class Settings(BaseSettings):
         default="*", description="Comma-separated list of allowed CORS origins"
     )
 
-    # Google Cloud SQL Configuration
-    CLOUD_SQL_CONNECTION_NAME: str | None = Field(
+    # Google Cloud Configuration
+    GOOGLE_CLOUD_PROJECT: str | None = Field(
         default=None,
-        description="Cloud SQL Instance Connection Name (project:region:instance)",
+        description="Google Cloud Project ID (used by Firestore if Default Credentials not present)",
     )
-    DB_USER: str | None = Field(default=None, description="Cloud SQL Database User")
-    DB_PASS: str | None = Field(default=None, description="Cloud SQL Database Password")
-    DB_NAME: str | None = Field(default=None, description="Cloud SQL Database Name")
+    FIRESTORE_DATABASE: str = Field(
+        default="(default)",
+        description="Firestore database ID (use '(default)' for the default database)",
+    )
 
     # Logging Configuration
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
@@ -74,12 +75,11 @@ class Settings(BaseSettings):
             return ["*"]
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
 
-    class Config:
-        """Pydantic configuration."""
-
-        env_file = ".env"
-        extra = "ignore"
-        case_sensitive = True
+    model_config = ConfigDict(
+        env_file=".env",
+        extra="ignore",
+        case_sensitive=True,
+    )
 
 
 @lru_cache()

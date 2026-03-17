@@ -5,7 +5,7 @@ from app.db import save_thread, get_user_threads, get_thread_by_id, delete_threa
 
 
 @pytest.mark.asyncio
-async def test_save_and_get_thread(db):
+async def test_save_and_get_thread(db_instance):
     """Test saving and retrieving a thread."""
     thread_id = "test-thread-123"
     user_id = "test-user-456"
@@ -23,7 +23,7 @@ async def test_save_and_get_thread(db):
 
 
 @pytest.mark.asyncio
-async def test_get_user_threads(db):
+async def test_get_user_threads(db_instance):
     """Test getting all threads for a user."""
     import uuid
 
@@ -41,7 +41,7 @@ async def test_get_user_threads(db):
 
 
 @pytest.mark.asyncio
-async def test_delete_thread(db):
+async def test_delete_thread(db_instance):
     """Test deleting a thread."""
     thread_id = "delete-test-thread"
     user_id = "delete-test-user"
@@ -58,7 +58,7 @@ async def test_delete_thread(db):
 
 
 @pytest.mark.asyncio
-async def test_thread_not_found(db):
+async def test_thread_not_found(db_instance):
     """Test retrieving non-existent thread."""
     thread = await get_thread_by_id("nonexistent-thread")
     assert thread is None
