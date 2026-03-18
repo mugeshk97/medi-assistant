@@ -5,6 +5,7 @@ from pathlib import Path
 
 import uvicorn
 from app.api import router
+from app.quiz.router import router as quiz_router
 from app.db import db
 from app.errors import MediAssistantError, ThreadNotFoundError, UnauthorizedError
 from app.graph import builder
@@ -122,6 +123,7 @@ async def add_security_headers(request, call_next):
 
 
 app.include_router(router, prefix="/api/v1")
+app.include_router(quiz_router, prefix="/api")
 
 
 @app.get("/health")

@@ -21,6 +21,8 @@ dependencies = [
     "langgraph-checkpoint-firestore>=0.1.0",  # LangGraph checkpointer for Firestore
     "gunicorn>=25.1.0",
     "pytest>=9.0.2",
+    "python-multipart>=0.0.22",
+    "pymupdf>=1.27.2",
 ]
 
 [project.optional-dependencies]
