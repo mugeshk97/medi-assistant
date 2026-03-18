@@ -52,8 +52,10 @@ async def lifespan(app: FastAPI):
             self.checkpoints_collection = self.client.collection("checkpoints")
             self.writes_collection = self.client.collection("writes")
 
+    if not settings.GOOGLE_CLOUD_PROJECT:
+        raise RuntimeError("GOOGLE_CLOUD_PROJECT environment variable is required")
     checkpointer = _FirestoreSaverWithDB(
-        project_id=settings.GOOGLE_CLOUD_PROJECT or "video-edit-agent",
+        project_id=settings.GOOGLE_CLOUD_PROJECT,
         database=settings.FIRESTORE_DATABASE,
     )
     app.state.graph = builder.compile(checkpointer=checkpointer)
@@ -144,7 +146,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def main():
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    reload = settings.ENVIRONMENT != "production"
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=reload)
 
 
 if __name__ == "__main__":
