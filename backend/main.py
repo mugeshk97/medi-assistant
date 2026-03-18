@@ -1,7 +1,6 @@
 import logging
 import sys
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 import uvicorn
 from app.api import router
@@ -12,8 +11,7 @@ from app.graph import builder
 from app.settings import get_settings
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -132,17 +130,6 @@ app.include_router(quiz_router, prefix="/api")
 def health_check():
     return {"status": "ok"}
 
-
-# Serve the chat UI
-STATIC_DIR = Path(__file__).resolve().parent / "static"
-
-
-@app.get("/")
-async def serve_ui():
-    return FileResponse(STATIC_DIR / "index.html")
-
-
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def main():

@@ -42,7 +42,6 @@ COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 
 # Copy application code
 COPY --chown=appuser:appuser ./app /app/app
-COPY --chown=appuser:appuser ./static /app/static
 COPY --chown=appuser:appuser ./main.py /app/main.py
 
 # Switch to non-root user
