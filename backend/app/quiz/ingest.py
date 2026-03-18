@@ -1,6 +1,9 @@
 """PDF ingestion module using PyMuPDF."""
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -41,5 +44,5 @@ def ingest_pdf(file_path: str | Path, chunk_size: int = 4000, chunk_overlap: int
     )
     chunks = splitter.split_documents(raw_docs)
 
-    print(f"✅ Loaded {len(raw_docs)} pages → {len(chunks)} chunks from '{file_path.name}'")
+    logger.info(f"Loaded {len(raw_docs)} pages -> {len(chunks)} chunks from '{file_path.name}'")
     return chunks

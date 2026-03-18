@@ -1,10 +1,14 @@
 """Quiz generation module using LangChain + OpenAI."""
 
+import logging
+
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from app.quiz.models import Quiz, Question
+
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """\
@@ -86,7 +90,7 @@ def _deduplicate_quiz(quiz: Quiz) -> Quiz:
         unique.append(q)
 
     if dropped:
-        print(f"⚠️  Removed {dropped} duplicate/invalid question(s)")
+        logger.warning(f"Removed {dropped} duplicate/invalid question(s)")
 
     quiz.questions = unique
     return quiz
@@ -129,7 +133,7 @@ def generate_quiz(
     chain = prompt | structured_llm
 
     final_name = quiz_name.strip() if quiz_name else "Document Quiz"
-    print(f"🤖 Generating {num_questions} questions using {model}...")
+    logger.info(f"Generating {num_questions} questions using {model}...")
     quiz = chain.invoke({
         "num_questions": num_questions,
         "context": context,
@@ -143,5 +147,5 @@ def generate_quiz(
     # Post-generation deduplication safety net
     quiz = _deduplicate_quiz(quiz)
 
-    print(f"✅ Generated quiz: '{quiz.title}' with {len(quiz.questions)} questions")
+    logger.info(f"Generated quiz: '{quiz.title}' with {len(quiz.questions)} questions")
     return quiz
