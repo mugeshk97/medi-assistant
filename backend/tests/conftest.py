@@ -2,27 +2,22 @@
 
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
-from app.db import init_db, db_pool
+from app.db import init_db, db
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
 async def setup_db():
-    """Connect to DB and initialise schema once for the whole test session.
-
-    All tests share a single event loop (asyncio_default_test_loop_scope=session
-    in pytest.ini). The Cloud SQL Connector binds to the running loop at
-    Connector() time, so everything must stay on that same loop.
-    """
-    await db_pool.connect()
+    """Connect to DB and initialise connection once for the whole test session."""
+    await db.connect()
     await init_db()
     yield
-    await db_pool.close()
+    await db.close()
 
 
 @pytest_asyncio.fixture(scope="function", loop_scope="session")
-async def db(setup_db):
-    """Yield the shared db_pool for a single test."""
-    yield db_pool
+async def db_instance(setup_db):
+    """Yield the shared db for a single test."""
+    yield db
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")

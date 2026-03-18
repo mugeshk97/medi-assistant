@@ -1,11 +1,11 @@
-import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
 
 import uvicorn
 from app.api import router
-from app.db import db_pool, init_db
+from app.quiz.router import router as quiz_router
+from app.db import db
 from app.errors import MediAssistantError, ThreadNotFoundError, UnauthorizedError
 from app.graph import builder
 from app.settings import get_settings
@@ -32,59 +32,40 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    # Initialize database pool
-    logger.info("Initializing database pool...")
-    await db_pool.connect()
-
-    # Initialize database schema
-    logger.info("Initializing databases...")
-    await init_db()
+    # Initialize database
+    logger.info("Initializing database...")
+    await db.connect()
 
     # Initialize async persistence based on driver
     logger.info("Initializing LangGraph checkpointer...")
 
-    # Use langchain-google-cloud-sql-pg which natively handles the Cloud SQL
-    # Connector, psycopg3, and LangGraph checkpointing in one cohesive API.
-    from langchain_google_cloud_sql_pg import PostgresEngine
-    from langchain_google_cloud_sql_pg import (
-        PostgresSaver as CloudSQLPostgresSaver,
+    from langgraph_checkpoint_firestore import FirestoreSaver
+    from google.cloud import firestore as firestore_sync
+
+    # FirestoreSaver creates its own sync client; subclass to inject the named database
+    class _FirestoreSaverWithDB(FirestoreSaver):
+        def __init__(self, project_id: str, database: str):
+            super().__init__(project_id)
+            self.client = firestore_sync.Client(project=project_id, database=database)
+            self.checkpoints_collection = self.client.collection("checkpoints")
+            self.writes_collection = self.client.collection("writes")
+
+    if not settings.GOOGLE_CLOUD_PROJECT:
+        raise RuntimeError("GOOGLE_CLOUD_PROJECT environment variable is required")
+    checkpointer = _FirestoreSaverWithDB(
+        project_id=settings.GOOGLE_CLOUD_PROJECT,
+        database=settings.FIRESTORE_DATABASE,
     )
-
-    # CLOUD_SQL_CONNECTION_NAME is "project:region:instance"
-    project_id, region, instance = settings.CLOUD_SQL_CONNECTION_NAME.split(":")
-
-    # create_sync builds the engine using Cloud SQL IAM / user+password auth
-    engine = await asyncio.to_thread(
-        PostgresEngine.from_instance,
-        project_id=project_id,
-        region=region,
-        instance=instance,
-        database=settings.DB_NAME,
-        user=settings.DB_USER,
-        password=settings.DB_PASS,
-    )
-
-    # init_checkpoint_table creates LangGraph checkpoint tables if absent.
-    # It does not use IF NOT EXISTS, so we catch DuplicateTable on restarts.
-    try:
-        await asyncio.to_thread(engine.init_checkpoint_table)
-    except Exception as e:
-        if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
-            logger.info("LangGraph checkpoint tables already exist — skipping init")
-        else:
-            raise
-
-    checkpointer = CloudSQLPostgresSaver.create_sync(engine)
     app.state.graph = builder.compile(checkpointer=checkpointer)
+    
     logger.info(
-        "MediAssistant started with Cloud SQL (langchain-google-cloud-sql-pg) checkpointer"
+        "MediAssistant started with Firestore checkpointer"
     )
     yield
     logger.info("Shutting down MediAssistant backend")
-    await engine.close()
 
     # Cleanup
-    await db_pool.close()
+    await db.close()
 
 
 app = FastAPI(title="MediAssistant Chat Backend", lifespan=lifespan)
@@ -118,7 +99,7 @@ app.add_middleware(
     allow_origins=settings.get_allowed_origins_list(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],  # Only necessary methods
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-User-ID"],
 )
 
 
@@ -142,6 +123,7 @@ async def add_security_headers(request, call_next):
 
 
 app.include_router(router, prefix="/api/v1")
+app.include_router(quiz_router, prefix="/api")
 
 
 @app.get("/health")
@@ -149,8 +131,10 @@ def health_check():
     return {"status": "ok"}
 
 
+
 def main():
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    reload = settings.ENVIRONMENT != "production"
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=reload)
 
 
 if __name__ == "__main__":

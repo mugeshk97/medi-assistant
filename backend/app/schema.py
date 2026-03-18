@@ -1,7 +1,7 @@
 """Pydantic models for request/response validation."""
 
 from typing import List, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 from datetime import datetime
 import re
 
@@ -41,10 +41,11 @@ class Thread(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
-    class Config:
-        """Pydantic configuration."""
+    model_config = ConfigDict()
 
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    @field_serializer("created_at", "updated_at")
+    def serialize_datetime(self, v: datetime | None) -> str | None:
+        return v.isoformat() if v else None
 
 
 class Message(BaseModel):

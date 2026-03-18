@@ -28,3 +28,4 @@ logs/
 *.sqlite
 *.sqlite3
 *.json
+*.md
