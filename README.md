@@ -1,201 +1,277 @@
 # MediAssistant
 
-> An intelligent medical assistant powered by GPT-4o-mini with built-in safety guardrails and cross-platform mobile support.
+> An intelligent medical assistant powered by LLM with built-in safety guardrails and quiz generation from PDFs.
 
-## 📋 Overview
+## Overview
 
-MediAssistant is a production-ready, full-stack medical chatbot application that combines:
-- **AI-powered conversational agent** using LangGraph and OpenAI
-- **Safety-first design** with input/output validation guardrails
-- **Cross-platform mobile app** (iOS, Android, Web) built with React Native + Expo
-- **Enterprise security** features including strict header validation and rate limiting
-- **Cloud-ready deployment** optimized for Google Cloud Run
+MediAssistant is a FastAPI backend service that provides:
+- **AI-powered medical chat** using LangGraph and OpenAI (or Azure OpenAI)
+- **Safety guardrails** with LLM-based input validation to ensure medical relevance
+- **Quiz generation** — upload a PDF and get a structured MCQ quiz
+- **Thread management** with persistent history via Firestore
+- **Real-time streaming** responses (token-by-token SSE)
+- **Cloud-ready deployment** for Google Cloud Run
 
-## ✨ Key Features
+## Key Features
 
-- 🤖 **Medical AI Agent** - GPT-4o-mini trained for healthcare queries
-- 🛡️ **Safety Guardrails** - LLM-based input validation to ensure medical relevance
-- 💬 **Thread Management** - Multi-conversation support with persistent history
-- ⚡ **Real-time Streaming** - Token-by-token response streaming
-- 🔐 **Anonymous Security** - Simple `X-User-ID` header-based session isolation
-- 🚦 **Rate Limiting** - Protection against abuse (10-30 req/min)
-- 📱 **Cross-Platform** - Single codebase for iOS, Android, and Web
-- 🎨 **Material Design 3** - Modern, polished UI
-- 🐳 **Docker Support** - Development and production containers
-- ☁️ **Cloud-Ready** - GCP Cloud Run, Secret Manager, Cloud SQL support
+- **Medical AI Agent** — LangGraph state machine backed by GPT-4o-mini (or Azure OpenAI)
+- **Safety Guardrails** — LLM validates every message for medical relevance before routing to the agent
+- **PDF Quiz Generator** — Upload any PDF, get back a structured multiple-choice quiz with explanations
+- **Multi-thread Support** — Multiple independent conversations per user, with full history
+- **Anonymous Sessions** — Simple `X-User-ID` header-based session isolation (no registration required)
+- **Rate Limiting** — Per-IP limits on all endpoints (10–30 req/min)
+- **Security Headers** — CORS, CSP, HSTS (production), X-Frame-Options, XSS Protection
+- **GCP Native** — Firestore for state and thread metadata, Cloud Run for hosting
 
-## 🏗️ Architecture
+## Architecture
+
+### LangGraph State Machine
 
 ```
-┌─────────────────────────────────────────────────────┐
-│           Mobile App (React Native + Expo)          │
-│  • Expo Router (file-based navigation)              │
-│  • Material Design 3 UI                             │
-│  • AsyncStorage for local persistence               │
-└───────────────────┬─────────────────────────────────┘
-                    │ REST API + Streaming
-                    │ Anonymous X-User-ID Header
-┌───────────────────▼─────────────────────────────────┐
-│              Backend (FastAPI)                      │
-│  • LangGraph State Machine                          │
-│  • OpenAI GPT-4o-mini                               │
-│  • SQLite/PostgreSQL                                │
-│  • Rate Limiting & Security Headers                 │
-└─────────────────────────────────────────────────────┘
+User Input
+    ↓
+[guardrail_check] ← LLM validates medical relevance
+    ↓
+  {is_safe?}
+  ├── Yes → [agent] → GPT-4o-mini → Stream tokens to client
+  └── No  → [unsafe_input] → "Medical topics only" rejection
 ```
 
-### Technology Stack
+### Data Persistence
 
-**Backend:**
-- FastAPI (async Python web framework)
-- LangChain & LangGraph (AI agent orchestration)
-- OpenAI GPT-4o-mini
-- SQLite (with PostgreSQL support for production)
-- HTTP header validation
-- Rate limiting (SlowAPI)
-- Uvicorn (ASGI server)
+Two separate Firestore stores are used together:
 
-**Mobile:**
-- React Native 0.81.5
-- Expo SDK 54
-- TypeScript
-- React Native Paper (Material Design 3)
-- Expo Router
-- AsyncStorage
-- Axios
+| Store | Purpose |
+|-------|---------|
+| `user_threads` collection | Thread metadata (title, timestamps, user association) |
+| LangGraph Firestore checkpointer | Full message history and agent state per thread |
 
-## 📁 Project Structure
+Both are cleaned up on thread deletion.
+
+## Project Structure
 
 ```
 medi-assistant/
-├── backend/                      # FastAPI backend
+├── backend/
 │   ├── app/
-│   │   ├── api.py               # Chat & thread endpoints
-│   │   ├── auth_api.py          # Authentication endpoints
-│   │   ├── graph.py             # LangGraph AI agent
-│   │   ├── guardrails.py        # Safety validation
-│   │   ├── db.py                # Database operations
-│   │   ├── user_db.py           # User management
-│   │   ├── schema.py            # Pydantic models
-│   │   └── settings.py          # Configuration
-│   ├── tests/                   # Pytest test suite
-│   ├── main.py                  # Application entry point
-│   ├── Dockerfile               # Multi-stage production build
-│   └── pyproject.toml           # Python dependencies
-├── mobile/                       # React Native app
-│   ├── app/                     # Expo Router screens
-│   │   ├── _layout.tsx          # Root layout
-│   │   ├── index.tsx            # Thread list
-│   │   ├── chat/[threadId].tsx  # Chat screen
-│   │   └── auth/                # Login/Register
-│   ├── src/
-│   │   ├── components/          # Reusable UI components
-│   │   ├── context/             # React Context
-│   │   ├── services/api.ts      # API client
-│   │   ├── config/theme.ts      # Theme configuration
-│   │   └── types/               # TypeScript types
-│   └── package.json
-├── docker-compose.yml            # Development setup
-└── docker-compose.prod.yml       # Production setup
+│   │   ├── api.py              # Chat & thread REST endpoints
+│   │   ├── db.py               # Firestore thread metadata operations
+│   │   ├── deps.py             # FastAPI dependencies (auth, graph)
+│   │   ├── errors.py           # Custom exception hierarchy
+│   │   ├── graph.py            # LangGraph agent definition
+│   │   ├── guardrails.py       # LLM-based safety validation
+│   │   ├── history.py          # Chat history serialization
+│   │   ├── schema.py           # Pydantic request/response models
+│   │   ├── settings.py         # Environment-driven configuration
+│   │   └── quiz/
+│   │       ├── router.py       # PDF upload & quiz generation endpoint
+│   │       ├── generator.py    # LLM quiz generation logic
+│   │       ├── ingest.py       # PDF text extraction
+│   │       └── models.py       # Quiz Pydantic models
+│   ├── tests/
+│   │   ├── conftest.py         # Pytest fixtures
+│   │   ├── test_api.py         # API endpoint tests
+│   │   └── test_db.py          # Database tests
+│   ├── main.py                 # Application entry point
+│   ├── Dockerfile              # Multi-stage production build
+│   └── pyproject.toml          # Dependencies & project config
+├── MediAssistant.postman_collection.json
+└── README.md
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-- **Backend**: Python 3.12+, OpenAI API key
-- **Mobile**: Node.js 18+, npm
-- **Docker** (optional): Docker Desktop or Docker Engine
+- Python 3.12+
+- OpenAI API key **or** Azure OpenAI credentials
+- Google Cloud project with Firestore enabled
+- Application Default Credentials configured (`gcloud auth application-default login`)
 
-### Option 1: Docker (Recommended)
-
-```bash
-# 1. Clone the repository
-git clone <repository-url>
-cd medi-assistant
-
-# 2. Set environment variables
-export OPENAI_API_KEY="your-openai-key-here"
-
-# 3. Start backend with Docker
-docker-compose up -d
-
-# 4. Install mobile dependencies
-cd mobile
-npm install
-
-# 5. Configure mobile environment
-echo "EXPO_PUBLIC_API_URL=http://localhost:8000/api/v1" > .env
-echo "EXPO_PUBLIC_USER_ID=user-1" >> .env
-
-# 6. Start mobile app
-npm start
-```
-
-### Option 2: Manual Setup
-
-#### Backend
+### Installation
 
 ```bash
 cd backend
 
-# Install dependencies (using uv - faster)
+# Install dependencies (using uv — recommended)
 pip install uv
 uv sync
 
-# Or use pip
+# Or using pip
 pip install -e .
+```
 
-# Configure environment
-cat > .env << EOF
-OPENAI_API_KEY=your-key-here
+### Configuration
+
+Create a `backend/.env` file:
+
+```bash
+# Choose one: OpenAI or Azure OpenAI
+OPENAI_API_KEY=sk-your-key-here
 MODEL_NAME=gpt-4o-mini
-ENVIRONMENT=development
-ALLOWED_ORIGINS=http://localhost:8081,exp://192.168.1.100:8081
-EOF
 
-# Run server
+# Azure OpenAI (alternative to OpenAI)
+# AZURE_OPENAI_API_KEY=your-azure-key
+# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+# AZURE_OPENAI_CHAT_DEPLOYMENT=your-deployment-name
+
+# Google Cloud / Firestore (required)
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+FIRESTORE_DATABASE=(default)
+
+# Application Settings
+ENVIRONMENT=development
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8081
+LOG_LEVEL=INFO
+RATE_LIMIT_ENABLED=true
+```
+
+### Run the Server
+
+```bash
+cd backend
 python main.py
 ```
 
-Backend will be available at `http://localhost:8000`  
-API docs at `http://localhost:8000/docs`
+Server endpoints:
+- API: `http://localhost:8000`
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+- Health: `http://localhost:8000/health`
 
-#### Mobile App
+## API Reference
+
+### Chat Endpoints
+
+All chat endpoints require an `X-User-ID: <your-user-id>` header.
+
+#### Send a Message (Streaming)
 
 ```bash
-cd mobile
+POST /api/v1/chat
+X-User-ID: user-123
+Content-Type: application/json
 
-# Install dependencies
-npm install
+{
+  "thread_id": "thread-abc",
+  "message": "What are the symptoms of the flu?"
+}
 
-# Configure environment
-# For Android Emulator
-echo "EXPO_PUBLIC_API_URL=http://10.0.2.2:8000/api/v1" > .env
-
-# For iOS Simulator
-echo "EXPO_PUBLIC_API_URL=http://localhost:8000/api/v1" > .env
-
-# For Physical Device (use your computer's IP)
-echo "EXPO_PUBLIC_API_URL=http://192.168.1.100:8000/api/v1" > .env
-
-# Start Expo
-npm start
-# Then: 'a' for Android, 'i' for iOS, 'w' for web
+# Response: text/event-stream (token-by-token)
 ```
 
-## 🔐 Security Features
+Rate limit: **10 req/min**
 
-- ✅ **Anonymous Sessions** - Secure header-based (`X-User-ID`) tracking
-- ✅ **Rate Limiting** - Per-IP limits on all endpoints
-- ✅ **CORS Configuration** - Restricted origins
-- ✅ **Security Headers** - X-Frame-Options, CSP, XSS Protection
-- ✅ **HSTS** - Enabled in production
-- ✅ **Input Validation** - LLM-based medical domain guardrails
-- ✅ **Thread Ownership** - Users can only access their own data
-- ✅ **Non-root Docker** - Runs as unprivileged user
+#### List Threads
 
-## 🧪 Testing
+```bash
+GET /api/v1/threads
+X-User-ID: user-123
+
+# Response:
+[
+  {
+    "thread_id": "thread-abc",
+    "title": "What are the symptoms of the flu?",
+    "created_at": "2026-03-19T12:00:00"
+  }
+]
+```
+
+Rate limit: **30 req/min**
+
+#### Get Chat History
+
+```bash
+GET /api/v1/history/{thread_id}
+X-User-ID: user-123
+
+# Response:
+{
+  "thread_id": "thread-abc",
+  "messages": [
+    {"role": "user", "content": "What are the symptoms of the flu?", "timestamp": "..."},
+    {"role": "assistant", "content": "Common flu symptoms include...", "timestamp": "..."}
+  ]
+}
+```
+
+Rate limit: **30 req/min**
+
+#### Delete a Thread
+
+```bash
+DELETE /api/v1/threads/{thread_id}
+X-User-ID: user-123
+```
+
+Rate limit: **10 req/min**
+
+#### Delete All Threads
+
+```bash
+DELETE /api/v1/threads
+X-User-ID: user-123
+```
+
+Rate limit: **5 req/min**
+
+---
+
+### Quiz Generation
+
+No authentication required.
+
+#### Generate Quiz from PDF
+
+```bash
+POST /api/generate
+Content-Type: multipart/form-data
+
+pdf=<file.pdf>
+num_questions=10          # optional, default 10
+model=gpt-4o-mini         # optional
+quiz_name=My Quiz         # optional
+
+# Response:
+{
+  "title": "Introduction to Cardiology",
+  "questions": [
+    {
+      "question": "Which chamber of the heart pumps blood to the lungs?",
+      "options": [
+        {"label": "A", "text": "Left ventricle"},
+        {"label": "B", "text": "Right ventricle"},
+        {"label": "C", "text": "Left atrium"},
+        {"label": "D", "text": "Right atrium"}
+      ],
+      "correct_answer": "B",
+      "explanation": "The right ventricle pumps deoxygenated blood to the lungs via the pulmonary artery.",
+      "source_page": 4
+    }
+  ]
+}
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | OpenAI API key | — |
+| `MODEL_NAME` | OpenAI model to use | `gpt-4o-mini` |
+| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | — |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | — |
+| `AZURE_OPENAI_CHAT_DEPLOYMENT` | Azure deployment name | — |
+| `GOOGLE_CLOUD_PROJECT` | GCP project ID (required) | — |
+| `FIRESTORE_DATABASE` | Firestore database ID | `(default)` |
+| `ENVIRONMENT` | `development` or `production` | `development` |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins | `*` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+| `RATE_LIMIT_ENABLED` | Enable rate limiting | `true` |
+
+## Testing
 
 ```bash
 cd backend
@@ -206,189 +282,56 @@ pytest
 # Run with coverage
 pytest --cov=app --cov-report=html
 
-# Run specific test file
+# Run specific file
 pytest tests/test_api.py -v
 ```
 
-## 🚢 Deployment
+## Deployment
 
-### Docker Production Build
+### Docker
 
 ```bash
-# Build and run production containers
-docker-compose -f docker-compose.prod.yml up -d
+cd backend
 
-# View logs
-docker-compose -f docker-compose.prod.yml logs -f
+# Build image
+docker build -t medi-assistant .
 
-# Stop containers
-docker-compose -f docker-compose.prod.yml down
+# Run container
+docker run -d \
+  -p 8000:8000 \
+  -e OPENAI_API_KEY=your-key \
+  -e GOOGLE_CLOUD_PROJECT=your-project \
+  -e ENVIRONMENT=production \
+  medi-assistant
 ```
 
 ### Google Cloud Run
 
-The backend is optimized for Cloud Run deployment:
-
 ```bash
-# Build and push to Google Container Registry
-gcloud builds submit --tag gcr.io/PROJECT_ID/medi-assistant
+# 1. Build and push to Container Registry
+gcloud builds submit --tag gcr.io/PROJECT_ID/medi-assistant ./backend
 
-# Deploy to Cloud Run
+# 2. Deploy to Cloud Run
 gcloud run deploy medi-assistant \
   --image gcr.io/PROJECT_ID/medi-assistant \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars OPENAI_API_KEY=your-key,ENVIRONMENT=production
+  --set-env-vars GOOGLE_CLOUD_PROJECT=PROJECT_ID,ENVIRONMENT=production \
+  --set-secrets OPENAI_API_KEY=openai-api-key:latest \
+  --max-instances 10 \
+  --memory 512Mi
 ```
 
-**Cloud Features:**
-- PostgreSQL support via Cloud SQL
-- Secret Manager integration
-- Structured logging (Cloud Logging)
-- Health checks and auto-scaling
+## Security
 
-## 📚 API Documentation
+- `X-User-ID` header isolates each user's threads — users can only access their own data
+- Rate limiting on all endpoints (SlowAPI)
+- Security headers on every response: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, `Referrer-Policy`
+- HSTS enabled in production
+- Non-root Docker container (`appuser`)
+- Never commit `.env` — use GCP Secret Manager in production
 
-### Chat Endpoints
+## Disclaimer
 
-All chat endpoints require an `X-User-ID: <uuid>` header to isolate and retrieve the correct history.
-
-```bash
-# Send message (streaming response)
-curl -X POST http://localhost:8000/api/v1/chat \
-  -H "X-User-ID: your-uuid-here" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "What are the symptoms of flu?",
-    "thread_id": "thread-123"
-  }'
-```GET /api/v1/threads
-
-# Get chat history
-GET /api/v1/history/{thread_id}
-
-# Delete thread
-DELETE /api/v1/threads/{thread_id}
-```
-
-**Rate Limits:**
-- Chat: 10 requests/minute
-- List/History: 30 requests/minute
-- Delete: 10 requests/minute
-
-Full interactive documentation: `http://localhost:8000/docs`
-
-## 🛠️ Development
-
-### Backend
-
-```bash
-cd backend
-
-# Run with hot-reload
-python main.py
-
-# Run tests in watch mode
-pytest-watch
-
-# Format code
-black app tests
-
-# Lint
-ruff check app
-```
-
-### Mobile
-
-```bash
-cd mobile
-
-# Start with cache clear
-npx expo start -c
-
-# Run on specific platform
-npm run android  # Android
-npm run ios      # iOS (macOS only)
-npm run web      # Web browser
-
-# TypeScript check
-npx tsc --noEmit
-```
-
-## 🐛 Troubleshooting
-
-### Backend Won't Start
-- Verify Python version: `python --version` (should be 3.12+)
-- Check OpenAI API key is set in `.env`
-- Ensure port 8000 is not in use: `lsof -i :8000`
-
-### Mobile Can't Connect
-- **Android Emulator**: Use `http://10.0.2.2:8000/api/v1`
-- **iOS Simulator**: Use `http://localhost:8000/api/v1`
-- **Physical Device**: Use computer's network IP (e.g., `http://192.168.1.100:8000/api/v1`)
-- Verify backend is running: `curl http://localhost:8000/health`
-
-### Docker Issues
-```bash
-# Clear everything and rebuild
-docker-compose down -v
-docker-compose build --no-cache
-docker-compose up
-```
-
-## 📊 Project Status
-
-**Current Version:** 1.0.0 (MVP/Beta)
-
-**Implemented:**
-- ✅ AI chat with streaming
-- ✅ Multi-thread support
-- ✅ Anonymous session tracking
-- ✅ Safety guardrails
-- ✅ Mobile app (iOS/Android/Web)
-- ✅ Docker deployment
-- ✅ Rate limiting
-
-**Roadmap:**
-- ⏳ Enhanced test coverage
-- ⏳ CI/CD pipeline
-- ⏳ PostgreSQL migration
-- ⏳ Offline mobile support
-- ⏳ Push notifications
-- ⏳ Admin dashboard
-- ⏳ Multi-language support
-
-## 🤝 Contributing
-
-We welcome contributions! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-**Guidelines:**
-- Follow existing code style
-- Add tests for new features
-- Update documentation
-- Keep commits atomic and well-described
-
-## 📄 License
-
-[Add your license here - e.g., MIT, Apache 2.0]
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/your-org/medi-assistant/issues)
-- **Documentation**: See `/backend/README.md` and `/mobile/README.md`
-- **API Docs**: http://localhost:8000/docs
-
-## ⚠️ Disclaimer
-
-MediAssistant is an informational tool and **not a replacement for professional medical care**. Always consult qualified healthcare professionals for medical advice, diagnosis, or treatment.
-
----
-
-**Built with ❤️ using FastAPI, LangGraph, and React Native**
+MediAssistant is an informational tool and **not a replacement for professional medical care**. Always consult a qualified healthcare professional for medical advice, diagnosis, or treatment.
