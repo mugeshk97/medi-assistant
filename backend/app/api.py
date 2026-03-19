@@ -68,7 +68,7 @@ async def chat(
             await save_thread(chat_request.thread_id, user_id, title)
             logger.info(f"Generated title for thread {chat_request.thread_id}: {title}")
         else:
-            await save_thread(chat_request.thread_id, user_id)
+            await save_thread(chat_request.thread_id, user_id, title=None)
 
         input_message = HumanMessage(content=chat_request.message)
 
@@ -101,7 +101,7 @@ async def chat(
         return StreamingResponse(event_generator(), media_type="text/event-stream")
     except Exception as e:
         logger.error(f"Error in chat endpoint: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def generate_thread_title(first_message: str, max_length: int = 50) -> str:
@@ -139,7 +139,7 @@ async def list_threads(
         logger.error(
             f"Error listing threads for user {user_id}: {str(e)}", exc_info=True
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/history/{thread_id}", response_model=ChatHistoryResponse)
@@ -171,7 +171,8 @@ async def get_history(
 
         return ChatHistoryResponse(thread_id=thread_id, messages=serialized)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting history for thread {thread_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/threads/{thread_id}")
@@ -214,8 +215,8 @@ async def delete_thread_endpoint(
         await delete_thread(thread_id)
         return {"status": "success", "message": f"Thread {thread_id} deleted fully"}
     except Exception as e:
-        logger.error(f"Error deleting thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error deleting thread {thread_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/threads")
@@ -261,5 +262,5 @@ async def delete_all_threads_endpoint(
             "message": f"Successfully deleted all {len(threads)} threads for user",
         }
     except Exception as e:
-        logger.error(f"Error bulk deleting threads for {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error bulk deleting threads for {user_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")

@@ -33,6 +33,10 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
+    # Validate required configuration before anything else
+    if not settings.OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY environment variable is required")
+
     # Initialize database
     logger.info("Initializing database...")
     await db.connect()
@@ -98,9 +102,9 @@ async def medi_assistant_error_handler(request: Request, exc: MediAssistantError
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_allowed_origins_list(),
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],  # Only necessary methods
-    allow_headers=["Content-Type", "Authorization", "X-User-ID", "X-API-Key"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "X-User-ID", "X-API-Key"],
 )
 
 

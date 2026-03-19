@@ -63,20 +63,22 @@ async def init_db():
         raise
 
 
-async def save_thread(thread_id: str, user_id: str, title: str = "New Chat"):
-    """Save or update a thread in the database."""
+async def save_thread(thread_id: str, user_id: str, title: str | None = None):
+    """Save or update a thread in the database.
+
+    On first message, pass title to set it. On subsequent messages, omit title
+    so the existing title is not overwritten.
+    """
     try:
         doc_ref = db.client.collection("user_threads").document(thread_id)
-        # Firestore merge=True handles UPSERT functionality
-        await doc_ref.set(
-            {
-                "thread_id": thread_id,
-                "user_id": user_id,
-                "title": title,
-                "updated_at": firestore_v1.SERVER_TIMESTAMP,
-            },
-            merge=True,
-        )
+        data: dict = {
+            "thread_id": thread_id,
+            "user_id": user_id,
+            "updated_at": firestore_v1.SERVER_TIMESTAMP,
+        }
+        if title is not None:
+            data["title"] = title
+        await doc_ref.set(data, merge=True)
     except Exception as e:
         logger.error(f"Error saving thread {thread_id}: {str(e)}", exc_info=True)
         raise
