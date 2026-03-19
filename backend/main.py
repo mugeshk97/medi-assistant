@@ -5,11 +5,12 @@ from contextlib import asynccontextmanager
 import uvicorn
 from app.api import router
 from app.quiz.router import router as quiz_router
+from app.deps import verify_api_key
 from app.db import db
 from app.errors import MediAssistantError, ThreadNotFoundError, UnauthorizedError
 from app.graph import builder
 from app.settings import get_settings
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -99,7 +100,7 @@ app.add_middleware(
     allow_origins=settings.get_allowed_origins_list(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],  # Only necessary methods
-    allow_headers=["Content-Type", "Authorization", "X-User-ID"],
+    allow_headers=["Content-Type", "Authorization", "X-User-ID", "X-API-Key"],
 )
 
 
@@ -122,8 +123,8 @@ async def add_security_headers(request, call_next):
     return response
 
 
-app.include_router(router, prefix="/api/v1")
-app.include_router(quiz_router, prefix="/api")
+app.include_router(router, prefix="/api/v1", dependencies=[Depends(verify_api_key)])
+app.include_router(quiz_router, prefix="/api", dependencies=[Depends(verify_api_key)])
 
 
 @app.get("/health")

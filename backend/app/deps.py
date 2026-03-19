@@ -1,4 +1,20 @@
-from fastapi import Request, Header, HTTPException
+from fastapi import Request, Header, HTTPException, Security
+from fastapi.security import APIKeyHeader
+from app.settings import get_settings
+
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(api_key: str | None = Security(_api_key_header)) -> None:
+    """
+    Validate the X-API-Key header against the configured API_KEY setting.
+    If API_KEY is not configured, this check is skipped entirely.
+    """
+    settings = get_settings()
+    if settings.API_KEY is None:
+        return
+    if not api_key or api_key != settings.API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 def get_current_user(

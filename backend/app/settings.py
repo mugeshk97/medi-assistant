@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # Logging Configuration
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
 
+    # API Key Authentication
+    API_KEY: str | None = Field(
+        default=None,
+        description="Static API key required in X-API-Key header. If unset, auth is disabled.",
+    )
+
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = Field(default=True, description="Enable rate limiting")
 

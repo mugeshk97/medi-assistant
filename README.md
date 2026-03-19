@@ -106,6 +106,10 @@ pip install -e .
 Create a `backend/.env` file:
 
 ```bash
+# API Key Authentication (optional but recommended)
+# If set, all /api/* requests must include X-API-Key: <value>
+API_KEY=your-secret-api-key-here
+
 # Choose one: OpenAI or Azure OpenAI
 OPENAI_API_KEY=sk-your-key-here
 MODEL_NAME=gpt-4o-mini
@@ -141,6 +145,19 @@ Server endpoints:
 
 ## API Reference
 
+### Authentication
+
+All `/api/*` endpoints require:
+
+| Header | Required | Description |
+|--------|----------|-------------|
+| `X-API-Key` | If `API_KEY` env var is set | Authenticates the caller |
+| `X-User-ID` | Always (chat endpoints) | Identifies the user session |
+
+If `API_KEY` is not configured, the key check is skipped entirely.
+
+---
+
 ### Chat Endpoints
 
 All chat endpoints require an `X-User-ID: <your-user-id>` header.
@@ -149,6 +166,7 @@ All chat endpoints require an `X-User-ID: <your-user-id>` header.
 
 ```bash
 POST /api/v1/chat
+X-API-Key: your-secret-api-key-here
 X-User-ID: user-123
 Content-Type: application/json
 
@@ -259,6 +277,7 @@ quiz_name=My Quiz         # optional
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `API_KEY` | Static API key for `X-API-Key` header auth. Unset = auth disabled | — |
 | `OPENAI_API_KEY` | OpenAI API key | — |
 | `MODEL_NAME` | OpenAI model to use | `gpt-4o-mini` |
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | — |
