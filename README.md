@@ -5,7 +5,7 @@
 ## Overview
 
 MediAssistant is a FastAPI backend service that provides:
-- **AI-powered medical chat** using LangGraph and OpenAI (or Azure OpenAI)
+- **AI-powered medical chat** using LangGraph and OpenAI
 - **Safety guardrails** with LLM-based input validation to ensure medical relevance
 - **Quiz generation** — upload a PDF and get a structured MCQ quiz
 - **Thread management** with persistent history via Firestore
@@ -14,7 +14,7 @@ MediAssistant is a FastAPI backend service that provides:
 
 ## Key Features
 
-- **Medical AI Agent** — LangGraph state machine backed by GPT-4o-mini (or Azure OpenAI)
+- **Medical AI Agent** — LangGraph state machine backed by GPT-4o-mini
 - **Safety Guardrails** — LLM validates every message for medical relevance before routing to the agent
 - **PDF Quiz Generator** — Upload any PDF, get back a structured multiple-choice quiz with explanations
 - **Multi-thread Support** — Multiple independent conversations per user, with full history
@@ -110,14 +110,9 @@ Create a `backend/.env` file:
 # If set, all /api/* requests must include X-API-Key: <value>
 API_KEY=your-secret-api-key-here
 
-# Choose one: OpenAI or Azure OpenAI
+# OpenAI
 OPENAI_API_KEY=sk-your-key-here
 MODEL_NAME=gpt-4o-mini
-
-# Azure OpenAI (alternative to OpenAI)
-# AZURE_OPENAI_API_KEY=your-azure-key
-# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-# AZURE_OPENAI_CHAT_DEPLOYMENT=your-deployment-name
 
 # Google Cloud / Firestore (required)
 GOOGLE_CLOUD_PROJECT=your-gcp-project-id
@@ -280,9 +275,6 @@ quiz_name=My Quiz         # optional
 | `API_KEY` | Static API key for `X-API-Key` header auth. Unset = auth disabled | — |
 | `OPENAI_API_KEY` | OpenAI API key | — |
 | `MODEL_NAME` | OpenAI model to use | `gpt-4o-mini` |
-| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | — |
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | — |
-| `AZURE_OPENAI_CHAT_DEPLOYMENT` | Azure deployment name | — |
 | `GOOGLE_CLOUD_PROJECT` | GCP project ID (required) | — |
 | `FIRESTORE_DATABASE` | Firestore database ID | `(default)` |
 | `ENVIRONMENT` | `development` or `production` | `development` |

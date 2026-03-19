@@ -2,7 +2,7 @@ from typing import Annotated, Literal, TypedDict
 import logging
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
@@ -19,15 +19,7 @@ class State(TypedDict):
     is_safe: bool
 
 
-if settings.AZURE_OPENAI_API_KEY:
-    llm = AzureChatOpenAI(
-        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-        azure_deployment=settings.AZURE_OPENAI_CHAT_DEPLOYMENT,
-        api_version="2024-02-15-preview",  # Defaulting to a common api_version
-        api_key=settings.AZURE_OPENAI_API_KEY,
-    )
-else:
-    llm = ChatOpenAI(model=settings.MODEL_NAME, api_key=settings.OPENAI_API_KEY)
+llm = ChatOpenAI(model=settings.MODEL_NAME, api_key=settings.OPENAI_API_KEY)
 
 # Medical assistant system prompt
 SYSTEM_PROMPT = """You are MediAssistant, an AI medical assistant designed to help with medical and health-related questions.

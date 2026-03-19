@@ -14,17 +14,6 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = Field(default=None, description="OpenAI API key")
     MODEL_NAME: str = Field(default="gpt-4o-mini", description="OpenAI model name")
 
-    # Azure OpenAI Configuration
-    AZURE_OPENAI_API_KEY: str | None = Field(
-        default=None, description="Azure OpenAI API key"
-    )
-    AZURE_OPENAI_ENDPOINT: str | None = Field(
-        default=None, description="Azure OpenAI endpoint"
-    )
-    AZURE_OPENAI_CHAT_DEPLOYMENT: str | None = Field(
-        default=None, description="Azure OpenAI chat deployment name"
-    )
-
     # Server Configuration
     ENVIRONMENT: str = Field(default="development", description="Environment name")
     HOST: str = Field(default="0.0.0.0", description="Server host")
@@ -57,7 +46,7 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = Field(default=True, description="Enable rate limiting")
 
-    @field_validator("OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", mode="before")
+    @field_validator("OPENAI_API_KEY", mode="before")
     @classmethod
     def validate_api_keys(cls, v: str | None) -> str | None:
         """Validate API keys."""
