@@ -68,3 +68,37 @@ class TestQuizInputs:
     def test_extra_instructions_too_long(self):
         with pytest.raises(ValidationError):
             QuizInputs(extra_instructions="x" * 1001)
+
+
+from app.quiz.models import QuizPlan
+
+
+class TestQuizPlan:
+    def test_construct_full_plan(self):
+        plan = QuizPlan(
+            title="Cardio Basics",
+            num_questions=10,
+            model="gpt-4o-mini",
+            focus_topics="ECG",
+            difficulty="medium",
+            question_style="case scenarios",
+            extra_instructions="",
+            document_source="<placeholder>",
+            rules=["rule one", "rule two"],
+        )
+        assert plan.title == "Cardio Basics"
+        assert plan.rules == ["rule one", "rule two"]
+
+    def test_difficulty_optional(self):
+        plan = QuizPlan(
+            title="Q",
+            num_questions=5,
+            model="gpt-4o-mini",
+            focus_topics="",
+            difficulty=None,
+            question_style="",
+            extra_instructions="",
+            document_source="x",
+            rules=[],
+        )
+        assert plan.difficulty is None

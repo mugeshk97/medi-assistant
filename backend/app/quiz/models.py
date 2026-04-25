@@ -86,3 +86,21 @@ class QuizInputs(BaseModel):
                 f"model '{v}' is not allowed; choose one of {list(ALLOWED_MODELS)}"
             )
         return v
+
+
+class QuizPlan(BaseModel):
+    """Structured preview of what the LLM will be asked to do.
+
+    The client renders this as a readable plan; rules are read-only and reflect
+    the system prompt's fixed contract.
+    """
+
+    title: str
+    num_questions: int
+    model: str
+    focus_topics: str
+    difficulty: Optional[Literal["easy", "medium", "hard"]]
+    question_style: str
+    extra_instructions: str
+    document_source: str
+    rules: list[str]
