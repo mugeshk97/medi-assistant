@@ -31,6 +31,15 @@ Rules:
 10. Do NOT reuse the same correct answer text across multiple questions.
 """
 
+SYSTEM_RULES: list[str] = [
+    "Each question has exactly 4 options labeled A, B, C, D.",
+    "Exactly one option is correct, with a clear explanation.",
+    "Distractors must be plausible — no throwaway options.",
+    "Each question cites the source page number from the PDF.",
+    "No duplicate questions; all 4 options must be meaningfully different.",
+    "Do not reuse the same correct-answer text across questions.",
+]
+
 USER_PROMPT = """\
 Generate a quiz titled "{quiz_name}" with {num_questions} multiple-choice questions based on the following document content.
 
@@ -134,11 +143,13 @@ def generate_quiz(
 
     final_name = quiz_name.strip() if quiz_name else "Document Quiz"
     logger.info(f"Generating {num_questions} questions using {model}...")
-    quiz = chain.invoke({
-        "num_questions": num_questions,
-        "context": context,
-        "quiz_name": final_name,
-    })
+    quiz = chain.invoke(
+        {
+            "num_questions": num_questions,
+            "context": context,
+            "quiz_name": final_name,
+        }
+    )
 
     # Override title with user-provided name if given
     if quiz_name.strip():

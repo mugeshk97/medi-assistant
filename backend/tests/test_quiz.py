@@ -3,6 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
+from app.quiz.generator import SYSTEM_PROMPT, SYSTEM_RULES
 from app.quiz.models import QuizInputs, QuizPlan
 
 
@@ -99,3 +100,32 @@ class TestQuizPlan:
             rules=[],
         )
         assert plan.difficulty is None
+
+
+class TestSystemRules:
+    def test_rules_non_empty(self):
+        assert len(SYSTEM_RULES) >= 5
+        for r in SYSTEM_RULES:
+            assert isinstance(r, str) and r.strip() == r and len(r) > 0
+
+    def test_each_rule_has_trace_in_system_prompt(self):
+        """Every rule must be backed by a numbered line in SYSTEM_PROMPT.
+
+        Catches one-sided edits: if you change a rule in SYSTEM_PROMPT but
+        forget SYSTEM_RULES (or vice versa), this fails.
+        """
+        prompt_lower = SYSTEM_PROMPT.lower()
+        rule_keywords = {
+            "Each question has exactly 4 options labeled A, B, C, D.": "exactly 4 options",
+            "Exactly one option is correct, with a clear explanation.": "exactly one option",
+            "Distractors must be plausible — no throwaway options.": "plausible",
+            "Each question cites the source page number from the PDF.": "source page",
+            "No duplicate questions; all 4 options must be meaningfully different.": "duplicate",
+            "Do not reuse the same correct-answer text across questions.": "reuse",
+        }
+        for r in SYSTEM_RULES:
+            assert r in rule_keywords, f"SYSTEM_RULES entry not registered: {r!r}"
+            assert rule_keywords[r] in prompt_lower, (
+                f"Drift detected: rule {r!r} expects keyword "
+                f"{rule_keywords[r]!r} in SYSTEM_PROMPT but it is missing."
+            )
