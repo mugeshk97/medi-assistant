@@ -3,7 +3,12 @@
 import pytest
 from pydantic import ValidationError
 
-from app.quiz.generator import SYSTEM_PROMPT, SYSTEM_RULES
+from app.quiz.generator import (
+    SYSTEM_PROMPT,
+    SYSTEM_RULES,
+    build_plan,
+    DOCUMENT_PLACEHOLDER,
+)
 from app.quiz.models import QuizInputs, QuizPlan
 
 
@@ -129,3 +134,37 @@ class TestSystemRules:
                 f"Drift detected: rule {r!r} expects keyword "
                 f"{rule_keywords[r]!r} in SYSTEM_PROMPT but it is missing."
             )
+
+
+class TestBuildPlan:
+    def test_full_inputs_round_trip(self):
+        inputs = QuizInputs(
+            quiz_name="Cardio Basics",
+            num_questions=12,
+            model="gpt-4o",
+            focus_topics="ECG, arrhythmias",
+            difficulty="hard",
+            question_style="case scenarios",
+            extra_instructions="Avoid trivia.",
+        )
+        plan = build_plan(inputs)
+        assert plan.title == "Cardio Basics"
+        assert plan.num_questions == 12
+        assert plan.model == "gpt-4o"
+        assert plan.focus_topics == "ECG, arrhythmias"
+        assert plan.difficulty == "hard"
+        assert plan.question_style == "case scenarios"
+        assert plan.extra_instructions == "Avoid trivia."
+        assert plan.document_source == DOCUMENT_PLACEHOLDER
+        assert plan.rules == SYSTEM_RULES
+
+    def test_defaults_use_fallback_title(self):
+        plan = build_plan(QuizInputs())
+        assert plan.title == "Document Quiz"  # fallback when quiz_name is empty
+        assert plan.focus_topics == ""
+        assert plan.difficulty is None
+        assert plan.rules == SYSTEM_RULES
+
+    def test_blank_quiz_name_uses_fallback(self):
+        plan = build_plan(QuizInputs(quiz_name="   "))
+        assert plan.title == "Document Quiz"

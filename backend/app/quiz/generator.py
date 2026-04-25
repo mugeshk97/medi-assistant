@@ -6,10 +6,12 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-from app.quiz.models import Quiz, Question
+from app.quiz.models import Quiz, Question, QuizInputs, QuizPlan
 
 logger = logging.getLogger(__name__)
 
+DOCUMENT_PLACEHOLDER = "<PDF you upload at generation time will be inserted here>"
+DEFAULT_QUIZ_TITLE = "Document Quiz"
 
 SYSTEM_PROMPT = """\
 You are an expert quiz maker. Given the content extracted from a PDF document, \
@@ -103,6 +105,22 @@ def _deduplicate_quiz(quiz: Quiz) -> Quiz:
 
     quiz.questions = unique
     return quiz
+
+
+def build_plan(inputs: QuizInputs) -> QuizPlan:
+    """Render a structured plan from validated inputs. Pure function — no I/O."""
+    title = inputs.quiz_name.strip() or DEFAULT_QUIZ_TITLE
+    return QuizPlan(
+        title=title,
+        num_questions=inputs.num_questions,
+        model=inputs.model,
+        focus_topics=inputs.focus_topics,
+        difficulty=inputs.difficulty,
+        question_style=inputs.question_style,
+        extra_instructions=inputs.extra_instructions,
+        document_source=DOCUMENT_PLACEHOLDER,
+        rules=list(SYSTEM_RULES),
+    )
 
 
 def generate_quiz(
