@@ -13,7 +13,14 @@ from app.quiz.generator import (
     _build_user_prompt_text,
     generate_quiz,
 )
-from app.quiz.models import Quiz, Question, Option, QuizInputs, QuizPlan
+from app.quiz.models import (
+    DocumentPreview,
+    Option,
+    Question,
+    Quiz,
+    QuizInputs,
+    QuizPlan,
+)
 
 
 def _api_headers() -> dict:
@@ -119,6 +126,18 @@ class TestQuizPlan:
             rules=[],
         )
         assert plan.difficulty is None
+
+
+class TestDocumentPreview:
+    def test_construct(self):
+        dp = DocumentPreview(filename="cardio.pdf", pages=3, excerpt="hello")
+        assert dp.filename == "cardio.pdf"
+        assert dp.pages == 3
+        assert dp.excerpt == "hello"
+
+    def test_round_trip(self):
+        dp = DocumentPreview(filename="cardio.pdf", pages=3, excerpt="hello")
+        assert DocumentPreview.model_validate(dp.model_dump()) == dp
 
 
 class TestSystemRules:

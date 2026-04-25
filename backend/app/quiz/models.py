@@ -45,6 +45,18 @@ ALLOWED_MODELS: tuple[str, ...] = (
 )
 
 
+class DocumentPreview(BaseModel):
+    """Lightweight summary of an ingested PDF, shown in the preview plan.
+
+    `pages` counts unique pages with extractable text — image-only pages
+    produce no chunk and are not counted.
+    """
+
+    filename: str
+    pages: int
+    excerpt: str
+
+
 class QuizInputs(BaseModel):
     """User-editable inputs that feed both the preview and the generate endpoints."""
 
