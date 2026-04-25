@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from pydantic import ValidationError
 
 from app.quiz.generator import build_plan, generate_quiz
 from app.quiz.ingest import ingest_pdf
@@ -11,12 +12,6 @@ from app.quiz.models import QuizInputs, QuizPlan
 
 router = APIRouter()
 
-_ALLOWED_MODELS = {
-    "gpt-4o-mini",
-    "gpt-4o",
-    "gpt-4-turbo",
-    "gpt-3.5-turbo",
-}  # TODO Task 8: remove
 _MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
@@ -33,34 +28,38 @@ async def preview_prompt(inputs: QuizInputs) -> QuizPlan:
 @router.post("/generate")
 async def generate(
     pdf: UploadFile = File(...),
-    num_questions: int = Form(default=10, ge=1, le=50),
+    num_questions: int = Form(default=10),
     model: str = Form(default="gpt-4o-mini"),
     quiz_name: str = Form(default=""),
+    focus_topics: str = Form(default=""),
+    difficulty: str = Form(default=""),
+    question_style: str = Form(default=""),
+    extra_instructions: str = Form(default=""),
 ):
-    """
-    Upload a PDF and generate an MCQ quiz.
-
-    Returns the structured quiz as JSON.
-    """
+    """Upload a PDF and generate an MCQ quiz."""
     if not pdf.filename or not pdf.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a valid PDF file.")
 
-    if model not in _ALLOWED_MODELS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Model '{model}' is not allowed. Choose from: {sorted(_ALLOWED_MODELS)}",
+    try:
+        inputs = QuizInputs(
+            quiz_name=quiz_name,
+            num_questions=num_questions,
+            model=model,
+            focus_topics=focus_topics,
+            difficulty=difficulty,
+            question_style=question_style,
+            extra_instructions=extra_instructions,
         )
+    except ValidationError as e:
+        # Serialize validation errors to JSON-safe format
+        errors = e.errors()
+        raise HTTPException(status_code=422, detail=str(errors))
 
     content = await pdf.read()
-
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
-
     if len(content) > _MAX_PDF_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail="PDF exceeds the 20 MB size limit.",
-        )
+        raise HTTPException(status_code=413, detail="PDF exceeds the 20 MB size limit.")
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(content)
@@ -68,16 +67,14 @@ async def generate(
 
     try:
         documents = ingest_pdf(tmp_path)
-        quiz = generate_quiz(
-            documents,
-            num_questions=num_questions,
-            model=model,
-            quiz_name=quiz_name,
-        )
+        quiz = generate_quiz(documents, inputs)
         if not quiz.questions:
             raise HTTPException(
                 status_code=422,
-                detail="Quiz generation produced no valid questions. Try a different PDF or fewer questions.",
+                detail=(
+                    "Quiz generation produced no valid questions. "
+                    "Try a different PDF or fewer questions."
+                ),
             )
         return quiz.model_dump()
     except HTTPException:

@@ -16,6 +16,16 @@ from app.quiz.generator import (
 from app.quiz.models import Quiz, Question, Option, QuizInputs, QuizPlan
 
 
+def _api_headers() -> dict:
+    """Return headers with API key for authenticated requests."""
+    from app.settings import get_settings
+
+    settings = get_settings()
+    if settings.API_KEY:
+        return {"X-API-Key": settings.API_KEY}
+    return {}
+
+
 class TestQuizInputs:
     def test_defaults(self):
         inputs = QuizInputs()
@@ -280,15 +290,6 @@ class TestGenerateQuiz:
 
 @pytest.mark.asyncio
 class TestPreviewPromptEndpoint:
-    def _api_headers(self):
-        """Return headers with API key for authenticated requests."""
-        from app.settings import get_settings
-
-        settings = get_settings()
-        if settings.API_KEY:
-            return {"X-API-Key": settings.API_KEY}
-        return {}
-
     async def test_happy_path(self, client):
         body = {
             "quiz_name": "Cardio",
@@ -300,7 +301,7 @@ class TestPreviewPromptEndpoint:
             "extra_instructions": "",
         }
         resp = await client.post(
-            "/api/preview-prompt", json=body, headers=self._api_headers()
+            "/api/preview-prompt", json=body, headers=_api_headers()
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()
@@ -312,9 +313,7 @@ class TestPreviewPromptEndpoint:
         assert isinstance(data["rules"], list) and len(data["rules"]) >= 5
 
     async def test_defaults(self, client):
-        resp = await client.post(
-            "/api/preview-prompt", json={}, headers=self._api_headers()
-        )
+        resp = await client.post("/api/preview-prompt", json={}, headers=_api_headers())
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert data["title"] == "Document Quiz"
@@ -325,7 +324,7 @@ class TestPreviewPromptEndpoint:
         resp = await client.post(
             "/api/preview-prompt",
             json={"difficulty": "extreme"},
-            headers=self._api_headers(),
+            headers=_api_headers(),
         )
         assert resp.status_code == 422
 
@@ -333,7 +332,7 @@ class TestPreviewPromptEndpoint:
         resp = await client.post(
             "/api/preview-prompt",
             json={"model": "gpt-5-imagined"},
-            headers=self._api_headers(),
+            headers=_api_headers(),
         )
         assert resp.status_code == 422
 
@@ -341,8 +340,118 @@ class TestPreviewPromptEndpoint:
         """Same-renderer guard: API response must equal build_plan() output."""
         body = {"quiz_name": "X", "num_questions": 3, "focus_topics": "alpha"}
         resp = await client.post(
-            "/api/preview-prompt", json=body, headers=self._api_headers()
+            "/api/preview-prompt", json=body, headers=_api_headers()
         )
         assert resp.status_code == 200
         expected = build_plan(QuizInputs(**body)).model_dump()
         assert resp.json() == expected
+
+
+def _fake_quiz() -> Quiz:
+    return Quiz(
+        title="placeholder",
+        questions=[
+            Question(
+                question="What pumps blood?",
+                options=[
+                    Option(label="A", text="Heart"),
+                    Option(label="B", text="Liver"),
+                    Option(label="C", text="Lung"),
+                    Option(label="D", text="Spleen"),
+                ],
+                correct_answer="A",
+                explanation="The heart pumps blood.",
+                source_page=1,
+            )
+        ],
+    )
+
+
+@pytest.mark.asyncio
+class TestGenerateEndpointBackcompat:
+    async def test_old_clients_still_work(self, client, monkeypatch):
+        captured: dict = {}
+
+        def fake_ingest(path):
+            return [type("D", (), {"page_content": "x", "metadata": {"page": 1}})()]
+
+        def fake_generate(documents, inputs):
+            captured["inputs"] = inputs
+            return _fake_quiz()
+
+        monkeypatch.setattr("app.quiz.router.ingest_pdf", fake_ingest)
+        monkeypatch.setattr("app.quiz.router.generate_quiz", fake_generate)
+
+        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
+        data = {"num_questions": "5", "model": "gpt-4o-mini", "quiz_name": "Old Client"}
+        resp = await client.post(
+            "/api/generate", files=files, data=data, headers=_api_headers()
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["title"] == "placeholder"
+        assert captured["inputs"].quiz_name == "Old Client"
+        assert captured["inputs"].num_questions == 5
+        assert captured["inputs"].focus_topics == ""
+        assert captured["inputs"].difficulty is None
+
+
+@pytest.mark.asyncio
+class TestGenerateEndpointNewFields:
+    async def test_new_fields_wire_through(self, client, monkeypatch):
+        captured: dict = {}
+
+        monkeypatch.setattr(
+            "app.quiz.router.ingest_pdf",
+            lambda _: [type("D", (), {"page_content": "x", "metadata": {"page": 1}})()],
+        )
+
+        def fake_generate(documents, inputs):
+            captured["inputs"] = inputs
+            return _fake_quiz()
+
+        monkeypatch.setattr("app.quiz.router.generate_quiz", fake_generate)
+
+        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
+        data = {
+            "num_questions": "7",
+            "focus_topics": "ECG",
+            "difficulty": "hard",
+            "question_style": "case scenarios",
+            "extra_instructions": "No trivia.",
+        }
+        resp = await client.post(
+            "/api/generate", files=files, data=data, headers=_api_headers()
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert captured["inputs"].focus_topics == "ECG"
+        assert captured["inputs"].difficulty == "hard"
+        assert captured["inputs"].question_style == "case scenarios"
+        assert captured["inputs"].extra_instructions == "No trivia."
+
+    async def test_invalid_difficulty_returns_422(self, client):
+        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
+        data = {"num_questions": "5", "difficulty": "extreme"}
+        resp = await client.post(
+            "/api/generate", files=files, data=data, headers=_api_headers()
+        )
+        assert resp.status_code == 422
+
+    async def test_invalid_model_returns_422(self, client):
+        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
+        data = {"num_questions": "5", "model": "gpt-5-imagined"}
+        resp = await client.post(
+            "/api/generate", files=files, data=data, headers=_api_headers()
+        )
+        assert resp.status_code == 422
+
+    async def test_non_pdf_returns_400(self, client):
+        files = {"pdf": ("x.txt", b"not a pdf", "text/plain")}
+        resp = await client.post(
+            "/api/generate",
+            files=files,
+            data={"num_questions": "5"},
+            headers=_api_headers(),
+        )
+        assert resp.status_code == 400
