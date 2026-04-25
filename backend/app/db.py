@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
+
 class Database:
     """Database connection manager for Google Cloud Firestore."""
 
@@ -44,7 +45,9 @@ class Database:
     def client(self) -> firestore_v1.AsyncClient:
         """Get the Firestore client."""
         if not self._client:
-            raise RuntimeError("Firestore client is not initialized. Call connect() first.")
+            raise RuntimeError(
+                "Firestore client is not initialized. Call connect() first."
+            )
         return self._client
 
 
@@ -120,9 +123,9 @@ async def get_user_threads(user_id: str) -> List[Dict[str, Any]]:
     """List threads for user_id."""
     try:
         threads_ref = db.client.collection("user_threads")
-        query = threads_ref.where(filter=FieldFilter("user_id", "==", user_id)).order_by(
-            "updated_at", direction=firestore_v1.Query.DESCENDING
-        )
+        query = threads_ref.where(
+            filter=FieldFilter("user_id", "==", user_id)
+        ).order_by("updated_at", direction=firestore_v1.Query.DESCENDING)
         docs = query.stream()
         return [doc.to_dict() async for doc in docs]
     except Exception as e:
@@ -149,7 +152,7 @@ async def delete_all_user_threads(user_id: str):
         threads_ref = db.client.collection("user_threads")
         query = threads_ref.where(filter=FieldFilter("user_id", "==", user_id))
         docs = query.stream()
-        
+
         # Batch deletion
         batch = db.client.batch()
         count = 0
@@ -161,14 +164,13 @@ async def delete_all_user_threads(user_id: str):
                 await batch.commit()
                 batch = db.client.batch()
                 count = 0
-                
+
         if count > 0:
             await batch.commit()
-            
+
         logger.info(f"Deleted all threads for user {user_id}")
     except Exception as e:
         logger.error(
             f"Error deleting all threads for user {user_id}: {str(e)}", exc_info=True
         )
         raise
-

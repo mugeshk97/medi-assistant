@@ -171,7 +171,9 @@ async def get_history(
 
         return ChatHistoryResponse(thread_id=thread_id, messages=serialized)
     except Exception as e:
-        logger.error(f"Error getting history for thread {thread_id}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error getting history for thread {thread_id}: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -262,5 +264,7 @@ async def delete_all_threads_endpoint(
             "message": f"Successfully deleted all {len(threads)} threads for user",
         }
     except Exception as e:
-        logger.error(f"Error bulk deleting threads for {user_id}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error bulk deleting threads for {user_id}: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Internal server error")
