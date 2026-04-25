@@ -6,12 +6,13 @@ from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from app.quiz.models import Quiz, Question, QuizInputs, QuizPlan
+from app.quiz.models import DocumentPreview, Quiz, Question, QuizInputs, QuizPlan
 
 logger = logging.getLogger(__name__)
 
 DOCUMENT_PLACEHOLDER = "<PDF you upload at generation time will be inserted here>"
 DEFAULT_QUIZ_TITLE = "Document Quiz"
+EXCERPT_MAX_CHARS = 500
 
 SYSTEM_PROMPT = """\
 You are an expert quiz maker. Given the content extracted from a PDF document, \
@@ -50,6 +51,21 @@ def _build_context(documents: list[Document]) -> str:
         page = doc.metadata.get("page", "unknown")
         parts.append(f"[Page {page}]\n{doc.page_content}")
     return "\n\n".join(parts)
+
+
+def build_document_preview(documents: list[Document], filename: str) -> DocumentPreview:
+    """Summarize ingested chunks for the preview response.
+
+    `pages` is the count of unique pages with extracted text. Chunks missing
+    a `page` metadata key (or with `page=None`) are excluded. `excerpt` is
+    the first EXCERPT_MAX_CHARS of the joined context, which begins at the
+    first chunk's `[Page N]` header.
+    """
+    pages = {
+        d.metadata.get("page") for d in documents if d.metadata.get("page") is not None
+    }
+    excerpt = _build_context(documents)[:EXCERPT_MAX_CHARS]
+    return DocumentPreview(filename=filename, pages=len(pages), excerpt=excerpt)
 
 
 def _normalize(text: str) -> str:

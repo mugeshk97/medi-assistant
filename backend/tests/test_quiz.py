@@ -6,11 +6,13 @@ from pydantic import ValidationError
 from langchain_core.documents import Document
 
 from app.quiz.generator import (
+    DOCUMENT_PLACEHOLDER,
+    EXCERPT_MAX_CHARS,
     SYSTEM_PROMPT,
     SYSTEM_RULES,
-    build_plan,
-    DOCUMENT_PLACEHOLDER,
     _build_user_prompt_text,
+    build_document_preview,
+    build_plan,
     generate_quiz,
 )
 from app.quiz.models import (
@@ -201,6 +203,38 @@ class TestBuildPlan:
     def test_blank_quiz_name_uses_fallback(self):
         plan = build_plan(QuizInputs(quiz_name="   "))
         assert plan.title == "Document Quiz"
+
+
+class TestBuildDocumentPreview:
+    def test_page_dedup(self):
+        docs = [
+            Document(page_content="a", metadata={"page": 1}),
+            Document(page_content="b", metadata={"page": 1}),  # same page
+            Document(page_content="c", metadata={"page": 2}),
+        ]
+        preview = build_document_preview(docs, "x.pdf")
+        assert preview.pages == 2
+        assert preview.filename == "x.pdf"
+
+    def test_excerpt_truncation(self):
+        long_content = "y" * 1000
+        docs = [Document(page_content=long_content, metadata={"page": 1})]
+        preview = build_document_preview(docs, "x.pdf")
+        assert len(preview.excerpt) == EXCERPT_MAX_CHARS
+
+    def test_filename_echoed_verbatim(self):
+        docs = [Document(page_content="x", metadata={"page": 1})]
+        preview = build_document_preview(docs, "weird name.pdf")
+        assert preview.filename == "weird name.pdf"
+
+    def test_missing_page_metadata_excluded(self):
+        docs = [
+            Document(page_content="a", metadata={"page": 1}),
+            Document(page_content="b", metadata={}),
+            Document(page_content="c", metadata={"page": None}),
+        ]
+        preview = build_document_preview(docs, "x.pdf")
+        assert preview.pages == 1
 
 
 class TestBuildUserPromptText:
