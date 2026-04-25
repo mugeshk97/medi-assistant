@@ -3,7 +3,7 @@
 import logging
 
 from langchain_core.documents import Document
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from app.quiz.models import Quiz, Question, QuizInputs, QuizPlan
@@ -143,65 +143,20 @@ def build_plan(inputs: QuizInputs) -> QuizPlan:
     )
 
 
-def generate_quiz(
-    documents: list[Document],
-    num_questions: int = 10,
-    model: str = "gpt-4o-mini",
-    temperature: float = 0.3,
-    quiz_name: str = "",
-) -> Quiz:
-    """
-    Generate a structured MCQ quiz from document chunks.
-
-    Args:
-        documents: List of LangChain Document objects from PDF ingestion.
-        num_questions: Number of questions to generate.
-        model: OpenAI model name to use.
-        temperature: Sampling temperature for generation.
-        quiz_name: Optional custom name for the quiz.
-
-    Returns:
-        A Quiz object with deduplicated questions.
-    """
+def generate_quiz(documents: list[Document], inputs: QuizInputs) -> Quiz:
+    """Generate a structured MCQ quiz from PDF chunks using the validated inputs."""
     context = _build_context(documents)
+    user_text = _build_user_prompt_text(inputs, context)
+    messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user_text)]
 
-    # Build the user prompt from inputs (Task 6 will refactor this further)
-    inputs = QuizInputs(
-        num_questions=num_questions,
-        model=model,
-        quiz_name=quiz_name,
-    )
-    user_prompt_text = _build_user_prompt_text(inputs, context)
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", SYSTEM_PROMPT),
-            ("human", user_prompt_text),
-        ]
-    )
-
-    llm = ChatOpenAI(model=model, temperature=temperature)
-
-    # Use structured output to get a validated Quiz object
+    llm = ChatOpenAI(model=inputs.model, temperature=0.3)
     structured_llm = llm.with_structured_output(Quiz)
 
-    chain = prompt | structured_llm
+    final_title = inputs.quiz_name.strip() or DEFAULT_QUIZ_TITLE
+    logger.info(f"Generating {inputs.num_questions} questions using {inputs.model}...")
+    quiz: Quiz = structured_llm.invoke(messages)
 
-    final_name = quiz_name.strip() if quiz_name else "Document Quiz"
-    logger.info(f"Generating {num_questions} questions using {model}...")
-    quiz = chain.invoke(
-        {
-            "num_questions": num_questions,
-            "context": context,
-            "quiz_name": final_name,
-        }
-    )
-
-    # Override title with user-provided name if given
-    if quiz_name.strip():
-        quiz.title = quiz_name.strip()
-
-    # Post-generation deduplication safety net
+    quiz.title = final_title  # always honor the user-provided title (or fallback)
     quiz = _deduplicate_quiz(quiz)
 
     logger.info(f"Generated quiz: '{quiz.title}' with {len(quiz.questions)} questions")

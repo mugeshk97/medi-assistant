@@ -3,14 +3,17 @@
 import pytest
 from pydantic import ValidationError
 
+from langchain_core.documents import Document
+
 from app.quiz.generator import (
     SYSTEM_PROMPT,
     SYSTEM_RULES,
     build_plan,
     DOCUMENT_PLACEHOLDER,
     _build_user_prompt_text,
+    generate_quiz,
 )
-from app.quiz.models import QuizInputs, QuizPlan
+from app.quiz.models import Quiz, Question, Option, QuizInputs, QuizPlan
 
 
 class TestQuizInputs:
@@ -204,3 +207,72 @@ class TestBuildUserPromptText:
             QuizInputs(quiz_name="{weird}", num_questions=1), context="DOC"
         )
         assert "{weird}" in text
+
+
+class _FakeStructuredLLM:
+    """Stub that captures the messages it was invoked with and returns a canned Quiz."""
+
+    def __init__(self, canned: Quiz):
+        self.canned = canned
+        self.captured_messages = None
+
+    def invoke(self, messages):
+        self.captured_messages = messages
+        return self.canned
+
+
+class TestGenerateQuiz:
+    def _docs(self) -> list[Document]:
+        return [
+            Document(page_content="Heart anatomy", metadata={"page": 1}),
+            Document(page_content="Conduction system", metadata={"page": 2}),
+        ]
+
+    def _canned(self) -> Quiz:
+        return Quiz(
+            title="ignored — overridden by inputs.quiz_name when set",
+            questions=[
+                Question(
+                    question="What pumps blood?",
+                    options=[
+                        Option(label="A", text="Heart"),
+                        Option(label="B", text="Liver"),
+                        Option(label="C", text="Lung"),
+                        Option(label="D", text="Spleen"),
+                    ],
+                    correct_answer="A",
+                    explanation="The heart is the muscular pump.",
+                    source_page=1,
+                )
+            ],
+        )
+
+    def test_uses_quiz_inputs_signature(self, monkeypatch):
+        fake = _FakeStructuredLLM(self._canned())
+        monkeypatch.setattr(
+            "app.quiz.generator.ChatOpenAI",
+            lambda **_: type(
+                "X", (), {"with_structured_output": lambda self, _: fake}
+            )(),
+        )
+
+        inputs = QuizInputs(quiz_name="Cardio", num_questions=1, focus_topics="ECG")
+        quiz = generate_quiz(self._docs(), inputs)
+
+        assert isinstance(quiz, Quiz)
+        assert quiz.title == "Cardio"  # overridden from inputs
+        assert len(quiz.questions) == 1
+        rendered = "\n".join(m.content for m in fake.captured_messages)
+        assert "Focus topics: ECG" in rendered
+        assert "Heart anatomy" in rendered  # context made it through
+
+    def test_blank_title_falls_back(self, monkeypatch):
+        fake = _FakeStructuredLLM(self._canned())
+        monkeypatch.setattr(
+            "app.quiz.generator.ChatOpenAI",
+            lambda **_: type(
+                "X", (), {"with_structured_output": lambda self, _: fake}
+            )(),
+        )
+        quiz = generate_quiz(self._docs(), QuizInputs(num_questions=1))
+        assert quiz.title == "Document Quiz"
