@@ -42,9 +42,6 @@ SYSTEM_RULES: list[str] = [
     "Do not reuse the same correct-answer text across questions.",
 ]
 
-# NOTE: This placeholder is used by generate_quiz and will be replaced in Task 6.
-USER_PROMPT = ""
-
 
 def _build_context(documents: list[Document]) -> str:
     """Combine document chunks into a single context string with page references."""
@@ -168,10 +165,18 @@ def generate_quiz(
     """
     context = _build_context(documents)
 
+    # Build the user prompt from inputs (Task 6 will refactor this further)
+    inputs = QuizInputs(
+        num_questions=num_questions,
+        model=model,
+        quiz_name=quiz_name,
+    )
+    user_prompt_text = _build_user_prompt_text(inputs, context)
+
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", SYSTEM_PROMPT),
-            ("human", USER_PROMPT),
+            ("human", user_prompt_text),
         ]
     )
 
