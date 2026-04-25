@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from langchain_core.documents import Document
 
 from app.quiz.generator import (
-    DOCUMENT_PLACEHOLDER,
     EXCERPT_MAX_CHARS,
     SYSTEM_PROMPT,
     SYSTEM_RULES,
@@ -109,10 +108,12 @@ class TestQuizPlan:
             difficulty="medium",
             question_style="case scenarios",
             extra_instructions="",
-            document_source="<placeholder>",
+            document=DocumentPreview(filename="x.pdf", pages=2, excerpt="hello"),
             rules=["rule one", "rule two"],
         )
         assert plan.title == "Cardio Basics"
+        assert plan.document.filename == "x.pdf"
+        assert plan.document.pages == 2
         assert plan.rules == ["rule one", "rule two"]
 
     def test_difficulty_optional(self):
@@ -124,7 +125,7 @@ class TestQuizPlan:
             difficulty=None,
             question_style="",
             extra_instructions="",
-            document_source="x",
+            document=DocumentPreview(filename="x.pdf", pages=1, excerpt=""),
             rules=[],
         )
         assert plan.difficulty is None
@@ -172,6 +173,9 @@ class TestSystemRules:
 
 
 class TestBuildPlan:
+    def _doc(self) -> DocumentPreview:
+        return DocumentPreview(filename="cardio.pdf", pages=3, excerpt="hello")
+
     def test_full_inputs_round_trip(self):
         inputs = QuizInputs(
             quiz_name="Cardio Basics",
@@ -182,7 +186,7 @@ class TestBuildPlan:
             question_style="case scenarios",
             extra_instructions="Avoid trivia.",
         )
-        plan = build_plan(inputs)
+        plan = build_plan(inputs, self._doc())
         assert plan.title == "Cardio Basics"
         assert plan.num_questions == 12
         assert plan.model == "gpt-4o"
@@ -190,18 +194,18 @@ class TestBuildPlan:
         assert plan.difficulty == "hard"
         assert plan.question_style == "case scenarios"
         assert plan.extra_instructions == "Avoid trivia."
-        assert plan.document_source == DOCUMENT_PLACEHOLDER
+        assert plan.document == self._doc()
         assert plan.rules == SYSTEM_RULES
 
     def test_defaults_use_fallback_title(self):
-        plan = build_plan(QuizInputs())
+        plan = build_plan(QuizInputs(), self._doc())
         assert plan.title == "Document Quiz"  # fallback when quiz_name is empty
         assert plan.focus_topics == ""
         assert plan.difficulty is None
         assert plan.rules == SYSTEM_RULES
 
     def test_blank_quiz_name_uses_fallback(self):
-        plan = build_plan(QuizInputs(quiz_name="   "))
+        plan = build_plan(QuizInputs(quiz_name="   "), self._doc())
         assert plan.title == "Document Quiz"
 
 
@@ -343,10 +347,18 @@ class TestGenerateQuiz:
 
 @pytest.mark.asyncio
 class TestPreviewPromptEndpoint:
-    async def test_happy_path(self, client):
-        body = {
+    def _stub_ingest(self, monkeypatch, docs):
+        monkeypatch.setattr("app.quiz.router.ingest_pdf", lambda _: docs)
+
+    async def test_happy_path(self, client, monkeypatch):
+        self._stub_ingest(
+            monkeypatch,
+            [Document(page_content="Heart pumps blood.", metadata={"page": 1})],
+        )
+        files = {"pdf": ("cardio.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
+        data = {
             "quiz_name": "Cardio",
-            "num_questions": 8,
+            "num_questions": "8",
             "model": "gpt-4o-mini",
             "focus_topics": "ECG",
             "difficulty": "medium",
@@ -354,49 +366,108 @@ class TestPreviewPromptEndpoint:
             "extra_instructions": "",
         }
         resp = await client.post(
-            "/api/preview-prompt", json=body, headers=_api_headers()
+            "/api/preview-prompt", files=files, data=data, headers=_api_headers()
         )
         assert resp.status_code == 200, resp.text
-        data = resp.json()
-        assert data["title"] == "Cardio"
-        assert data["num_questions"] == 8
-        assert data["focus_topics"] == "ECG"
-        assert data["difficulty"] == "medium"
-        assert data["document_source"]
-        assert isinstance(data["rules"], list) and len(data["rules"]) >= 5
+        body = resp.json()
+        assert body["title"] == "Cardio"
+        assert body["num_questions"] == 8
+        assert body["focus_topics"] == "ECG"
+        assert body["difficulty"] == "medium"
+        assert body["document"]["filename"] == "cardio.pdf"
+        assert body["document"]["pages"] == 1
+        assert "Heart pumps blood." in body["document"]["excerpt"]
+        assert isinstance(body["rules"], list) and len(body["rules"]) >= 5
 
-    async def test_defaults(self, client):
-        resp = await client.post("/api/preview-prompt", json={}, headers=_api_headers())
+    async def test_defaults(self, client, monkeypatch):
+        self._stub_ingest(
+            monkeypatch, [Document(page_content="x", metadata={"page": 1})]
+        )
+        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
+        resp = await client.post(
+            "/api/preview-prompt", files=files, headers=_api_headers()
+        )
         assert resp.status_code == 200, resp.text
-        data = resp.json()
-        assert data["title"] == "Document Quiz"
-        assert data["num_questions"] == 10
-        assert data["difficulty"] is None
+        body = resp.json()
+        assert body["title"] == "Document Quiz"
+        assert body["num_questions"] == 10
+        assert body["difficulty"] is None
 
     async def test_invalid_difficulty_returns_422(self, client):
+        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
         resp = await client.post(
             "/api/preview-prompt",
-            json={"difficulty": "extreme"},
+            files=files,
+            data={"difficulty": "extreme"},
             headers=_api_headers(),
         )
         assert resp.status_code == 422
+        assert isinstance(resp.json()["detail"], list)
 
     async def test_invalid_model_returns_422(self, client):
+        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
         resp = await client.post(
             "/api/preview-prompt",
-            json={"model": "gpt-5-imagined"},
+            files=files,
+            data={"model": "gpt-5-imagined"},
             headers=_api_headers(),
         )
         assert resp.status_code == 422
+        assert isinstance(resp.json()["detail"], list)
 
-    async def test_response_matches_build_plan(self, client):
-        """Same-renderer guard: API response must equal build_plan() output."""
-        body = {"quiz_name": "X", "num_questions": 3, "focus_topics": "alpha"}
+    async def test_non_pdf_returns_400(self, client):
+        files = {"pdf": ("x.txt", b"not a pdf", "text/plain")}
         resp = await client.post(
-            "/api/preview-prompt", json=body, headers=_api_headers()
+            "/api/preview-prompt", files=files, headers=_api_headers()
+        )
+        assert resp.status_code == 400
+
+    async def test_empty_pdf_returns_400(self, client):
+        files = {"pdf": ("x.pdf", b"", "application/pdf")}
+        resp = await client.post(
+            "/api/preview-prompt", files=files, headers=_api_headers()
+        )
+        assert resp.status_code == 400
+
+    async def test_oversized_pdf_returns_413(self, client, monkeypatch):
+        # Shrink the cap rather than uploading 20 MB in a unit test.
+        monkeypatch.setattr("app.quiz.router._MAX_PDF_BYTES", 100)
+        files = {
+            "pdf": (
+                "x.pdf",
+                b"%PDF-1.4 " + b"x" * 200,
+                "application/pdf",
+            )
+        }
+        resp = await client.post(
+            "/api/preview-prompt", files=files, headers=_api_headers()
+        )
+        assert resp.status_code == 413
+
+    async def test_empty_chunks_returns_422(self, client, monkeypatch):
+        self._stub_ingest(monkeypatch, [])
+        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
+        resp = await client.post(
+            "/api/preview-prompt", files=files, headers=_api_headers()
+        )
+        assert resp.status_code == 422
+        assert "no extractable text" in resp.json()["detail"].lower()
+
+    async def test_response_matches_build_plan(self, client, monkeypatch):
+        """Same-renderer guard: API response must equal build_plan() output."""
+        canned_docs = [Document(page_content="alpha beta", metadata={"page": 1})]
+        self._stub_ingest(monkeypatch, canned_docs)
+        files = {"pdf": ("foo.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
+        data = {"quiz_name": "X", "num_questions": "3", "focus_topics": "alpha"}
+        resp = await client.post(
+            "/api/preview-prompt", files=files, data=data, headers=_api_headers()
         )
         assert resp.status_code == 200
-        expected = build_plan(QuizInputs(**body)).model_dump()
+        expected_inputs = QuizInputs(
+            quiz_name="X", num_questions=3, focus_topics="alpha"
+        )
+        expected_doc = build_document_preview(canned_docs, "foo.pdf")
+        expected = build_plan(expected_inputs, expected_doc).model_dump()
         assert resp.json() == expected
 
 

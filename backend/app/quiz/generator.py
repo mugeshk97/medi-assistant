@@ -10,7 +10,6 @@ from app.quiz.models import DocumentPreview, Quiz, Question, QuizInputs, QuizPla
 
 logger = logging.getLogger(__name__)
 
-DOCUMENT_PLACEHOLDER = "<PDF you upload at generation time will be inserted here>"
 DEFAULT_QUIZ_TITLE = "Document Quiz"
 EXCERPT_MAX_CHARS = 500
 
@@ -143,8 +142,12 @@ def _deduplicate_quiz(quiz: Quiz) -> Quiz:
     return quiz
 
 
-def build_plan(inputs: QuizInputs) -> QuizPlan:
-    """Render a structured plan from validated inputs. Pure function — no I/O."""
+def build_plan(inputs: QuizInputs, document: DocumentPreview) -> QuizPlan:
+    """Render a structured plan from validated inputs + a document preview.
+
+    Pure function — no I/O. Called by the /preview-prompt route after the PDF
+    has been ingested into chunks.
+    """
     title = inputs.quiz_name.strip() or DEFAULT_QUIZ_TITLE
     return QuizPlan(
         title=title,
@@ -154,7 +157,7 @@ def build_plan(inputs: QuizInputs) -> QuizPlan:
         difficulty=inputs.difficulty,
         question_style=inputs.question_style,
         extra_instructions=inputs.extra_instructions,
-        document_source=DOCUMENT_PLACEHOLDER,
+        document=document,
         rules=list(SYSTEM_RULES),
     )
 

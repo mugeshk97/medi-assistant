@@ -114,5 +114,5 @@ class QuizPlan(BaseModel):
     difficulty: Optional[Literal["easy", "medium", "hard"]]
     question_style: str
     extra_instructions: str
-    document_source: str
+    document: DocumentPreview
     rules: list[str]

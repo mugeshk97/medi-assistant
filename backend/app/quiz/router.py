@@ -9,7 +9,7 @@ from typing import AsyncIterator
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
-from app.quiz.generator import build_plan, generate_quiz
+from app.quiz.generator import build_document_preview, build_plan, generate_quiz
 from app.quiz.ingest import ingest_pdf
 from app.quiz.models import QuizInputs, QuizPlan
 
@@ -46,13 +46,43 @@ async def _accept_pdf_upload(pdf: UploadFile) -> AsyncIterator[Path]:
 
 
 @router.post("/preview-prompt", response_model=QuizPlan)
-async def preview_prompt(inputs: QuizInputs) -> QuizPlan:
-    """Return a structured plan of what the quiz LLM will be asked to do.
+async def preview_prompt(
+    pdf: UploadFile = File(...),
+    num_questions: int = Form(default=10),
+    model: str = Form(default="gpt-4o-mini"),
+    quiz_name: str = Form(default=""),
+    focus_topics: str = Form(default=""),
+    difficulty: str = Form(default=""),
+    question_style: str = Form(default=""),
+    extra_instructions: str = Form(default=""),
+) -> QuizPlan:
+    """Ingest the PDF and return a plan describing what the LLM will be asked to do.
 
-    No PDF, no LLM call. Pure render so the client can show the user
-    exactly what they're approving before uploading the document.
+    No LLM call. The client uses this to verify extraction and approve fields
+    before paying for /generate.
     """
-    return build_plan(inputs)
+    try:
+        inputs = QuizInputs(
+            quiz_name=quiz_name,
+            num_questions=num_questions,
+            model=model,
+            focus_topics=focus_topics,
+            difficulty=difficulty,
+            question_style=question_style,
+            extra_instructions=extra_instructions,
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=json.loads(e.json()))
+
+    async with _accept_pdf_upload(pdf) as tmp_path:
+        documents = ingest_pdf(tmp_path)
+        if not documents:
+            raise HTTPException(
+                status_code=422,
+                detail="PDF produced no extractable text. Try a different document.",
+            )
+        document = build_document_preview(documents, pdf.filename or "")
+        return build_plan(inputs, document)
 
 
 @router.post("/generate")
