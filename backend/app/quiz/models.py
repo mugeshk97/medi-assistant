@@ -1,6 +1,8 @@
 """Pydantic models for structured quiz output."""
 
-from pydantic import BaseModel, Field
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class Option(BaseModel):
@@ -33,3 +35,46 @@ class Quiz(BaseModel):
 
     title: str = Field(description="A descriptive title for the quiz")
     questions: list[Question] = Field(description="List of MCQ questions")
+
+
+ALLOWED_MODELS: tuple[str, ...] = (
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4-turbo",
+    "gpt-3.5-turbo",
+)
+
+
+class QuizInputs(BaseModel):
+    """User-editable inputs that feed both the preview and the generate endpoints."""
+
+    quiz_name: str = Field(default="", max_length=200)
+    num_questions: int = Field(default=10, ge=1, le=50)
+    model: str = Field(default="gpt-4o-mini")
+    focus_topics: str = Field(default="", max_length=500)
+    difficulty: Optional[Literal["easy", "medium", "hard"]] = None
+    question_style: str = Field(default="", max_length=200)
+    extra_instructions: str = Field(default="", max_length=1000)
+
+    @field_validator("quiz_name", "focus_topics", "question_style", "extra_instructions", mode="before")
+    @classmethod
+    def _strip_text(cls, v):
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+    @field_validator("difficulty", mode="before")
+    @classmethod
+    def _empty_difficulty_is_none(cls, v):
+        if v in ("", None):
+            return None
+        return v
+
+    @field_validator("model")
+    @classmethod
+    def _model_in_allowlist(cls, v: str) -> str:
+        if v not in ALLOWED_MODELS:
+            raise ValueError(f"model '{v}' is not allowed; choose one of {list(ALLOWED_MODELS)}")
+        return v
