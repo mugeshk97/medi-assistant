@@ -276,3 +276,73 @@ class TestGenerateQuiz:
         )
         quiz = generate_quiz(self._docs(), QuizInputs(num_questions=1))
         assert quiz.title == "Document Quiz"
+
+
+@pytest.mark.asyncio
+class TestPreviewPromptEndpoint:
+    def _api_headers(self):
+        """Return headers with API key for authenticated requests."""
+        from app.settings import get_settings
+
+        settings = get_settings()
+        if settings.API_KEY:
+            return {"X-API-Key": settings.API_KEY}
+        return {}
+
+    async def test_happy_path(self, client):
+        body = {
+            "quiz_name": "Cardio",
+            "num_questions": 8,
+            "model": "gpt-4o-mini",
+            "focus_topics": "ECG",
+            "difficulty": "medium",
+            "question_style": "case scenarios",
+            "extra_instructions": "",
+        }
+        resp = await client.post(
+            "/api/preview-prompt", json=body, headers=self._api_headers()
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["title"] == "Cardio"
+        assert data["num_questions"] == 8
+        assert data["focus_topics"] == "ECG"
+        assert data["difficulty"] == "medium"
+        assert data["document_source"]
+        assert isinstance(data["rules"], list) and len(data["rules"]) >= 5
+
+    async def test_defaults(self, client):
+        resp = await client.post(
+            "/api/preview-prompt", json={}, headers=self._api_headers()
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["title"] == "Document Quiz"
+        assert data["num_questions"] == 10
+        assert data["difficulty"] is None
+
+    async def test_invalid_difficulty_returns_422(self, client):
+        resp = await client.post(
+            "/api/preview-prompt",
+            json={"difficulty": "extreme"},
+            headers=self._api_headers(),
+        )
+        assert resp.status_code == 422
+
+    async def test_invalid_model_returns_422(self, client):
+        resp = await client.post(
+            "/api/preview-prompt",
+            json={"model": "gpt-5-imagined"},
+            headers=self._api_headers(),
+        )
+        assert resp.status_code == 422
+
+    async def test_response_matches_build_plan(self, client):
+        """Same-renderer guard: API response must equal build_plan() output."""
+        body = {"quiz_name": "X", "num_questions": 3, "focus_topics": "alpha"}
+        resp = await client.post(
+            "/api/preview-prompt", json=body, headers=self._api_headers()
+        )
+        assert resp.status_code == 200
+        expected = build_plan(QuizInputs(**body)).model_dump()
+        assert resp.json() == expected

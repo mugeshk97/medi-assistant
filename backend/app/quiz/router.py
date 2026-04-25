@@ -5,13 +5,29 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
+from app.quiz.generator import build_plan, generate_quiz
 from app.quiz.ingest import ingest_pdf
-from app.quiz.generator import generate_quiz
+from app.quiz.models import QuizInputs, QuizPlan
 
 router = APIRouter()
 
-_ALLOWED_MODELS = {"gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"}
+_ALLOWED_MODELS = {
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4-turbo",
+    "gpt-3.5-turbo",
+}  # TODO Task 8: remove
 _MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
+
+
+@router.post("/preview-prompt", response_model=QuizPlan)
+async def preview_prompt(inputs: QuizInputs) -> QuizPlan:
+    """Return a structured plan of what the quiz LLM will be asked to do.
+
+    No PDF, no LLM call. Pure render so the client can show the user
+    exactly what they're approving before uploading the document.
+    """
+    return build_plan(inputs)
 
 
 @router.post("/generate")
@@ -43,7 +59,7 @@ async def generate(
     if len(content) > _MAX_PDF_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"PDF exceeds the 20 MB size limit.",
+            detail="PDF exceeds the 20 MB size limit.",
         )
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
@@ -69,6 +85,8 @@ async def generate(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception:
-        raise HTTPException(status_code=500, detail="Quiz generation failed. Please try again.")
+        raise HTTPException(
+            status_code=500, detail="Quiz generation failed. Please try again."
+        )
     finally:
         tmp_path.unlink(missing_ok=True)
