@@ -8,6 +8,7 @@ from app.quiz.generator import (
     SYSTEM_RULES,
     build_plan,
     DOCUMENT_PLACEHOLDER,
+    _build_user_prompt_text,
 )
 from app.quiz.models import QuizInputs, QuizPlan
 
@@ -168,3 +169,38 @@ class TestBuildPlan:
     def test_blank_quiz_name_uses_fallback(self):
         plan = build_plan(QuizInputs(quiz_name="   "))
         assert plan.title == "Document Quiz"
+
+
+class TestBuildUserPromptText:
+    def test_minimal_inputs_have_no_optional_sections(self):
+        text = _build_user_prompt_text(QuizInputs(num_questions=5), context="DOC TEXT")
+        assert "DOC TEXT" in text
+        assert "5" in text
+        assert "Focus topics:" not in text
+        assert "Difficulty:" not in text
+        assert "Question style:" not in text
+        assert "Extra instructions:" not in text
+
+    def test_all_optional_fields_render(self):
+        inputs = QuizInputs(
+            quiz_name="Cardio",
+            num_questions=8,
+            focus_topics="ECG",
+            difficulty="hard",
+            question_style="case scenarios",
+            extra_instructions="No trivia.",
+        )
+        text = _build_user_prompt_text(inputs, context="DOC")
+        assert "Focus topics: ECG" in text
+        assert "Difficulty: hard" in text
+        assert "Question style: case scenarios" in text
+        assert "Extra instructions: No trivia." in text
+        assert '"Cardio"' in text  # quiz title appears in the prompt
+
+    def test_curly_brace_in_title_is_safe(self):
+        # Regression guard: title must NOT be passed through a templating engine
+        # that would try to interpret braces as variable names.
+        text = _build_user_prompt_text(
+            QuizInputs(quiz_name="{weird}", num_questions=1), context="DOC"
+        )
+        assert "{weird}" in text

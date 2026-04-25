@@ -42,18 +42,8 @@ SYSTEM_RULES: list[str] = [
     "Do not reuse the same correct-answer text across questions.",
 ]
 
-USER_PROMPT = """\
-Generate a quiz titled "{quiz_name}" with {num_questions} multiple-choice questions based on the following document content.
-
-IMPORTANT: Every question must be unique — do not repeat or rephrase any question. \
-Each question's 4 options must all be distinct from each other.
-
---- DOCUMENT CONTENT ---
-{context}
---- END DOCUMENT CONTENT ---
-
-Generate the quiz now. Use the exact title provided above.
-"""
+# NOTE: This placeholder is used by generate_quiz and will be replaced in Task 6.
+USER_PROMPT = ""
 
 
 def _build_context(documents: list[Document]) -> str:
@@ -68,6 +58,39 @@ def _build_context(documents: list[Document]) -> str:
 def _normalize(text: str) -> str:
     """Lowercase, strip, and collapse whitespace for comparison."""
     return " ".join(text.lower().split())
+
+
+def _build_user_prompt_text(inputs: QuizInputs, context: str) -> str:
+    """Render the human-side prompt as plain text. Optional fields render only when set."""
+    title = inputs.quiz_name.strip() or DEFAULT_QUIZ_TITLE
+    lines: list[str] = [
+        f'Generate a quiz titled "{title}" with {inputs.num_questions} multiple-choice '
+        f"questions based on the following document content.",
+        "",
+        "IMPORTANT: Every question must be unique — do not repeat or rephrase any "
+        "question. Each question's 4 options must all be distinct from each other.",
+    ]
+
+    optional: list[tuple[str, str]] = [
+        ("Focus topics", inputs.focus_topics),
+        ("Difficulty", inputs.difficulty or ""),
+        ("Question style", inputs.question_style),
+        ("Extra instructions", inputs.extra_instructions),
+    ]
+    rendered_optional = [f"{label}: {value}" for label, value in optional if value]
+    if rendered_optional:
+        lines.append("")
+        lines.extend(rendered_optional)
+
+    lines += [
+        "",
+        "--- DOCUMENT CONTENT ---",
+        context,
+        "--- END DOCUMENT CONTENT ---",
+        "",
+        "Generate the quiz now. Use the exact title provided above.",
+    ]
+    return "\n".join(lines)
 
 
 def _deduplicate_quiz(quiz: Quiz) -> Quiz:
