@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.quiz.models import QuizInputs
+from app.quiz.models import QuizInputs, QuizPlan
 
 
 class TestQuizInputs:
@@ -68,9 +68,6 @@ class TestQuizInputs:
     def test_extra_instructions_too_long(self):
         with pytest.raises(ValidationError):
             QuizInputs(extra_instructions="x" * 1001)
-
-
-from app.quiz.models import QuizPlan
 
 
 class TestQuizPlan:
