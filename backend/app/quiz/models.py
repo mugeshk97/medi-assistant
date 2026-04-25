@@ -56,7 +56,13 @@ class QuizInputs(BaseModel):
     question_style: str = Field(default="", max_length=200)
     extra_instructions: str = Field(default="", max_length=1000)
 
-    @field_validator("quiz_name", "focus_topics", "question_style", "extra_instructions", mode="before")
+    @field_validator(
+        "quiz_name",
+        "focus_topics",
+        "question_style",
+        "extra_instructions",
+        mode="before",
+    )
     @classmethod
     def _strip_text(cls, v):
         if v is None:
@@ -76,5 +82,7 @@ class QuizInputs(BaseModel):
     @classmethod
     def _model_in_allowlist(cls, v: str) -> str:
         if v not in ALLOWED_MODELS:
-            raise ValueError(f"model '{v}' is not allowed; choose one of {list(ALLOWED_MODELS)}")
+            raise ValueError(
+                f"model '{v}' is not allowed; choose one of {list(ALLOWED_MODELS)}"
+            )
         return v
