@@ -437,6 +437,7 @@ class TestGenerateEndpointNewFields:
             "/api/generate", files=files, data=data, headers=_api_headers()
         )
         assert resp.status_code == 422
+        assert isinstance(resp.json()["detail"], list)
 
     async def test_invalid_model_returns_422(self, client):
         files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
@@ -445,6 +446,7 @@ class TestGenerateEndpointNewFields:
             "/api/generate", files=files, data=data, headers=_api_headers()
         )
         assert resp.status_code == 422
+        assert isinstance(resp.json()["detail"], list)
 
     async def test_non_pdf_returns_400(self, client):
         files = {"pdf": ("x.txt", b"not a pdf", "text/plain")}

@@ -1,5 +1,6 @@
 """Quiz generation API router."""
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -51,9 +52,7 @@ async def generate(
             extra_instructions=extra_instructions,
         )
     except ValidationError as e:
-        # Serialize validation errors to JSON-safe format
-        errors = e.errors()
-        raise HTTPException(status_code=422, detail=str(errors))
+        raise HTTPException(status_code=422, detail=json.loads(e.json()))
 
     content = await pdf.read()
     if len(content) == 0:
