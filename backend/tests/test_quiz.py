@@ -453,6 +453,20 @@ class TestPreviewPromptEndpoint:
         assert resp.status_code == 422
         assert "no extractable text" in resp.json()["detail"].lower()
 
+    async def test_corrupt_pdf_returns_422(self, client, monkeypatch):
+        """ingest_pdf raises ValueError on corrupt PDFs — must surface as 422, not 500."""
+
+        def raising_ingest(_):
+            raise ValueError("PDF appears to be empty or could not be parsed.")
+
+        monkeypatch.setattr("app.quiz.router.ingest_pdf", raising_ingest)
+        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
+        resp = await client.post(
+            "/api/preview-prompt", files=files, headers=_api_headers()
+        )
+        assert resp.status_code == 422
+        assert "could not be parsed" in resp.json()["detail"].lower()
+
     async def test_response_matches_build_plan(self, client, monkeypatch):
         """Same-renderer guard: API response must equal build_plan() output."""
         canned_docs = [Document(page_content="alpha beta", metadata={"page": 1})]

@@ -75,7 +75,10 @@ async def preview_prompt(
         raise HTTPException(status_code=422, detail=json.loads(e.json()))
 
     async with _accept_pdf_upload(pdf) as tmp_path:
-        documents = ingest_pdf(tmp_path)
+        try:
+            documents = ingest_pdf(tmp_path)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
         if not documents:
             raise HTTPException(
                 status_code=422,
