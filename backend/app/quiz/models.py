@@ -107,12 +107,21 @@ class QuizPlan(BaseModel):
     the system prompt's fixed contract.
     """
 
-    title: str
-    num_questions: int
-    model: str
-    focus_topics: str
-    difficulty: Optional[Literal["easy", "medium", "hard"]]
-    question_style: str
-    extra_instructions: str
     document: DocumentPreview
-    rules: list[str]
+    prompt: str = Field(description="The generated instruction text that the user can edit")
+
+
+class GenerateRequest(BaseModel):
+    """Request body for generating a quiz without re-ingesting the PDF."""
+
+    prompt: str = Field(description="The user's (potentially edited) instruction text")
+    model: str = Field(default="gpt-4o-mini", description="The LLM model to use")
+
+    @field_validator("model")
+    @classmethod
+    def _model_in_allowlist(cls, v: str) -> str:
+        if v not in ALLOWED_MODELS:
+            raise ValueError(
+                f"model '{v}' is not allowed; choose one of {list(ALLOWED_MODELS)}"
+            )
+        return v

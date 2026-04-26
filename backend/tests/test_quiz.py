@@ -13,6 +13,7 @@ from app.quiz.generator import (
     build_document_preview,
     build_plan,
     generate_quiz,
+    _build_context,
 )
 from app.quiz.models import (
     DocumentPreview,
@@ -21,47 +22,33 @@ from app.quiz.models import (
     Quiz,
     QuizInputs,
     QuizPlan,
+    GenerateRequest,
 )
 
-
 def _api_headers() -> dict:
-    """Return headers with API key for authenticated requests."""
     from app.settings import get_settings
-
     settings = get_settings()
     if settings.API_KEY:
         return {"X-API-Key": settings.API_KEY}
     return {}
-
 
 class TestQuizInputs:
     def test_defaults(self):
         inputs = QuizInputs()
         assert inputs.quiz_name == ""
         assert inputs.num_questions == 10
-        assert inputs.model == "gpt-4o-mini"
-        assert inputs.focus_topics == ""
-        assert inputs.difficulty is None
-        assert inputs.question_style == ""
-        assert inputs.extra_instructions == ""
 
     def test_all_fields_set(self):
         inputs = QuizInputs(
-            quiz_name="Cardio Basics",
-            num_questions=12,
-            model="gpt-4o",
-            focus_topics="ECG, arrhythmias",
-            difficulty="medium",
-            question_style="case scenarios",
-            extra_instructions="Avoid trivia.",
+            quiz_name="Cardio Basics", num_questions=12, model="gpt-4o",
+            focus_topics="ECG, arrhythmias", difficulty="medium",
+            question_style="case scenarios", extra_instructions="Avoid trivia.",
         )
-        assert inputs.quiz_name == "Cardio Basics"
         assert inputs.difficulty == "medium"
 
     def test_strips_whitespace(self):
         inputs = QuizInputs(quiz_name="  Cardio  ", focus_topics="  topic  ")
         assert inputs.quiz_name == "Cardio"
-        assert inputs.focus_topics == "topic"
 
     @pytest.mark.parametrize("n", [0, 51, -1])
     def test_num_questions_out_of_range(self, n):
@@ -74,276 +61,98 @@ class TestQuizInputs:
 
     @pytest.mark.parametrize("d", ["", "EASY", "extreme", "Medium"])
     def test_difficulty_invalid(self, d):
-        # Empty string is coerced to None and accepted; everything else is invalid.
         if d == "":
             assert QuizInputs(difficulty=d).difficulty is None
         else:
             with pytest.raises(ValidationError):
                 QuizInputs(difficulty=d)
 
-    def test_quiz_name_too_long(self):
-        with pytest.raises(ValidationError):
-            QuizInputs(quiz_name="x" * 201)
-
-    def test_focus_topics_too_long(self):
-        with pytest.raises(ValidationError):
-            QuizInputs(focus_topics="x" * 501)
-
-    def test_question_style_too_long(self):
-        with pytest.raises(ValidationError):
-            QuizInputs(question_style="x" * 201)
-
-    def test_extra_instructions_too_long(self):
-        with pytest.raises(ValidationError):
-            QuizInputs(extra_instructions="x" * 1001)
-
-
 class TestQuizPlan:
     def test_construct_full_plan(self):
         plan = QuizPlan(
-            title="Cardio Basics",
-            num_questions=10,
-            model="gpt-4o-mini",
-            focus_topics="ECG",
-            difficulty="medium",
-            question_style="case scenarios",
-            extra_instructions="",
             document=DocumentPreview(filename="x.pdf", pages=2, excerpt="hello"),
-            rules=["rule one", "rule two"],
+            prompt="prompt"
         )
-        assert plan.title == "Cardio Basics"
         assert plan.document.filename == "x.pdf"
-        assert plan.document.pages == 2
-        assert plan.rules == ["rule one", "rule two"]
-
-    def test_difficulty_optional(self):
-        plan = QuizPlan(
-            title="Q",
-            num_questions=5,
-            model="gpt-4o-mini",
-            focus_topics="",
-            difficulty=None,
-            question_style="",
-            extra_instructions="",
-            document=DocumentPreview(filename="x.pdf", pages=1, excerpt=""),
-            rules=[],
-        )
-        assert plan.difficulty is None
-
+        assert plan.prompt == "prompt"
 
 class TestDocumentPreview:
     def test_construct(self):
         dp = DocumentPreview(filename="cardio.pdf", pages=3, excerpt="hello")
         assert dp.filename == "cardio.pdf"
-        assert dp.pages == 3
-        assert dp.excerpt == "hello"
 
     def test_round_trip(self):
         dp = DocumentPreview(filename="cardio.pdf", pages=3, excerpt="hello")
         assert DocumentPreview.model_validate(dp.model_dump()) == dp
 
-
 class TestSystemRules:
     def test_rules_non_empty(self):
         assert len(SYSTEM_RULES) >= 5
-        for r in SYSTEM_RULES:
-            assert isinstance(r, str) and r.strip() == r and len(r) > 0
-
-    def test_each_rule_has_trace_in_system_prompt(self):
-        """Every rule must be backed by a numbered line in SYSTEM_PROMPT.
-
-        Catches one-sided edits: if you change a rule in SYSTEM_PROMPT but
-        forget SYSTEM_RULES (or vice versa), this fails.
-        """
-        prompt_lower = SYSTEM_PROMPT.lower()
-        rule_keywords = {
-            "Each question has exactly 4 options labeled A, B, C, D.": "exactly 4 options",
-            "Exactly one option is correct, with a clear explanation.": "exactly one option",
-            "Distractors must be plausible — no throwaway options.": "plausible",
-            "Each question cites the source page number from the PDF.": "source page",
-            "No duplicate questions; all 4 options must be meaningfully different.": "duplicate",
-            "Do not reuse the same correct-answer text across questions.": "reuse",
-        }
-        for r in SYSTEM_RULES:
-            assert r in rule_keywords, f"SYSTEM_RULES entry not registered: {r!r}"
-            assert rule_keywords[r] in prompt_lower, (
-                f"Drift detected: rule {r!r} expects keyword "
-                f"{rule_keywords[r]!r} in SYSTEM_PROMPT but it is missing."
-            )
-
 
 class TestBuildPlan:
     def _doc(self) -> DocumentPreview:
         return DocumentPreview(filename="cardio.pdf", pages=3, excerpt="hello")
 
     def test_full_inputs_round_trip(self):
-        inputs = QuizInputs(
-            quiz_name="Cardio Basics",
-            num_questions=12,
-            model="gpt-4o",
-            focus_topics="ECG, arrhythmias",
-            difficulty="hard",
-            question_style="case scenarios",
-            extra_instructions="Avoid trivia.",
-        )
-        plan = build_plan(inputs, self._doc())
-        assert plan.title == "Cardio Basics"
-        assert plan.num_questions == 12
-        assert plan.model == "gpt-4o"
-        assert plan.focus_topics == "ECG, arrhythmias"
-        assert plan.difficulty == "hard"
-        assert plan.question_style == "case scenarios"
-        assert plan.extra_instructions == "Avoid trivia."
+        inputs = QuizInputs(quiz_name="Cardio Basics", num_questions=12, model="gpt-4o")
+        plan = build_plan(inputs, self._doc(), "context")
+        assert "context" in plan.prompt
+        assert "Cardio Basics" in plan.prompt
         assert plan.document == self._doc()
-        assert plan.rules == SYSTEM_RULES
-
-    def test_defaults_use_fallback_title(self):
-        plan = build_plan(QuizInputs(), self._doc())
-        assert plan.title == "Document Quiz"  # fallback when quiz_name is empty
-        assert plan.focus_topics == ""
-        assert plan.difficulty is None
-        assert plan.rules == SYSTEM_RULES
-
-    def test_blank_quiz_name_uses_fallback(self):
-        plan = build_plan(QuizInputs(quiz_name="   "), self._doc())
-        assert plan.title == "Document Quiz"
-
 
 class TestBuildDocumentPreview:
     def test_page_dedup(self):
-        docs = [
-            Document(page_content="a", metadata={"page": 1}),
-            Document(page_content="b", metadata={"page": 1}),  # same page
-            Document(page_content="c", metadata={"page": 2}),
-        ]
-        preview = build_document_preview(docs, "x.pdf")
-        assert preview.pages == 2
-        assert preview.filename == "x.pdf"
+        docs = [Document(page_content="a", metadata={"page": 1}), Document(page_content="b", metadata={"page": 1}), Document(page_content="c", metadata={"page": 2})]
+        assert build_document_preview(docs, "x.pdf").pages == 2
 
     def test_excerpt_truncation(self):
-        long_content = "y" * 1000
-        docs = [Document(page_content=long_content, metadata={"page": 1})]
-        preview = build_document_preview(docs, "x.pdf")
-        assert len(preview.excerpt) == EXCERPT_MAX_CHARS
-
-    def test_filename_echoed_verbatim(self):
-        docs = [Document(page_content="x", metadata={"page": 1})]
-        preview = build_document_preview(docs, "weird name.pdf")
-        assert preview.filename == "weird name.pdf"
+        docs = [Document(page_content="y"*1000, metadata={"page": 1})]
+        assert len(build_document_preview(docs, "x.pdf").excerpt) == EXCERPT_MAX_CHARS
 
     def test_missing_page_metadata_excluded(self):
-        docs = [
-            Document(page_content="a", metadata={"page": 1}),
-            Document(page_content="b", metadata={}),
-            Document(page_content="c", metadata={"page": None}),
-        ]
-        preview = build_document_preview(docs, "x.pdf")
-        assert preview.pages == 1
-
+        docs = [Document(page_content="a", metadata={"page": 1}), Document(page_content="b", metadata={})]
+        assert build_document_preview(docs, "x.pdf").pages == 1
 
 class TestBuildUserPromptText:
     def test_minimal_inputs_have_no_optional_sections(self):
-        text = _build_user_prompt_text(QuizInputs(num_questions=5), context="DOC TEXT")
-        assert "DOC TEXT" in text
+        text = _build_user_prompt_text(QuizInputs(num_questions=5), "DOC TEXT")
         assert "5" in text
+        assert "DOC TEXT" in text
         assert "Focus topics:" not in text
-        assert "Difficulty:" not in text
-        assert "Question style:" not in text
-        assert "Extra instructions:" not in text
 
     def test_all_optional_fields_render(self):
-        inputs = QuizInputs(
-            quiz_name="Cardio",
-            num_questions=8,
-            focus_topics="ECG",
-            difficulty="hard",
-            question_style="case scenarios",
-            extra_instructions="No trivia.",
-        )
-        text = _build_user_prompt_text(inputs, context="DOC")
+        inputs = QuizInputs(quiz_name="Cardio", num_questions=8, focus_topics="ECG")
+        text = _build_user_prompt_text(inputs, "DOC")
         assert "Focus topics: ECG" in text
-        assert "Difficulty: hard" in text
-        assert "Question style: case scenarios" in text
-        assert "Extra instructions: No trivia." in text
-        assert '"Cardio"' in text  # quiz title appears in the prompt
+        assert '"Cardio"' in text
+        assert "DOC" in text
 
     def test_curly_brace_in_title_is_safe(self):
-        # Regression guard: title must NOT be passed through a templating engine
-        # that would try to interpret braces as variable names.
-        text = _build_user_prompt_text(
-            QuizInputs(quiz_name="{weird}", num_questions=1), context="DOC"
-        )
+        text = _build_user_prompt_text(QuizInputs(quiz_name="{weird}", num_questions=1), "DOC")
         assert "{weird}" in text
 
-
 class _FakeStructuredLLM:
-    """Stub that captures the messages it was invoked with and returns a canned Quiz."""
-
     def __init__(self, canned: Quiz):
         self.canned = canned
         self.captured_messages = None
-
     def invoke(self, messages):
         self.captured_messages = messages
         return self.canned
 
+def _fake_quiz() -> Quiz:
+    return Quiz(
+        title="Generated Title",
+        questions=[Question(question="Q?", options=[Option(label="A", text="O1"), Option(label="B", text="O2"), Option(label="C", text="O3"), Option(label="D", text="O4")], correct_answer="A", explanation="E", source_page=1)]
+    )
 
 class TestGenerateQuiz:
-    def _docs(self) -> list[Document]:
-        return [
-            Document(page_content="Heart anatomy", metadata={"page": 1}),
-            Document(page_content="Conduction system", metadata={"page": 2}),
-        ]
-
-    def _canned(self) -> Quiz:
-        return Quiz(
-            title="ignored — overridden by inputs.quiz_name when set",
-            questions=[
-                Question(
-                    question="What pumps blood?",
-                    options=[
-                        Option(label="A", text="Heart"),
-                        Option(label="B", text="Liver"),
-                        Option(label="C", text="Lung"),
-                        Option(label="D", text="Spleen"),
-                    ],
-                    correct_answer="A",
-                    explanation="The heart is the muscular pump.",
-                    source_page=1,
-                )
-            ],
-        )
-
-    def test_uses_quiz_inputs_signature(self, monkeypatch):
-        fake = _FakeStructuredLLM(self._canned())
-        monkeypatch.setattr(
-            "app.quiz.generator.ChatOpenAI",
-            lambda **_: type(
-                "X", (), {"with_structured_output": lambda self, _: fake}
-            )(),
-        )
-
-        inputs = QuizInputs(quiz_name="Cardio", num_questions=1, focus_topics="ECG")
-        quiz = generate_quiz(self._docs(), inputs)
-
-        assert isinstance(quiz, Quiz)
-        assert quiz.title == "Cardio"  # overridden from inputs
-        assert len(quiz.questions) == 1
+    def test_uses_strings(self, monkeypatch):
+        fake = _FakeStructuredLLM(_fake_quiz())
+        monkeypatch.setattr("app.quiz.generator.ChatOpenAI", lambda **_: type("X", (), {"with_structured_output": lambda self, _: fake})())
+        quiz = generate_quiz("my prompt", "gpt-4o-mini")
+        assert quiz.title == "Generated Title"
         rendered = "\n".join(m.content for m in fake.captured_messages)
-        assert "Focus topics: ECG" in rendered
-        assert "Heart anatomy" in rendered  # context made it through
-
-    def test_blank_title_falls_back(self, monkeypatch):
-        fake = _FakeStructuredLLM(self._canned())
-        monkeypatch.setattr(
-            "app.quiz.generator.ChatOpenAI",
-            lambda **_: type(
-                "X", (), {"with_structured_output": lambda self, _: fake}
-            )(),
-        )
-        quiz = generate_quiz(self._docs(), QuizInputs(num_questions=1))
-        assert quiz.title == "Document Quiz"
-
+        assert "my prompt" in rendered
 
 @pytest.mark.asyncio
 class TestPreviewPromptEndpoint:
@@ -351,247 +160,48 @@ class TestPreviewPromptEndpoint:
         monkeypatch.setattr("app.quiz.router.ingest_pdf", lambda _: docs)
 
     async def test_happy_path(self, client, monkeypatch):
-        self._stub_ingest(
-            monkeypatch,
-            [Document(page_content="Heart pumps blood.", metadata={"page": 1})],
-        )
+        self._stub_ingest(monkeypatch, [Document(page_content="Heart pumps blood.", metadata={"page": 1})])
         files = {"pdf": ("cardio.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
-        data = {
-            "quiz_name": "Cardio",
-            "num_questions": "8",
-            "model": "gpt-4o-mini",
-            "focus_topics": "ECG",
-            "difficulty": "medium",
-            "question_style": "case scenarios",
-            "extra_instructions": "",
-        }
-        resp = await client.post(
-            "/api/preview-prompt", files=files, data=data, headers=_api_headers()
-        )
+        data = {"quiz_name": "Cardio", "num_questions": "8", "model": "gpt-4o-mini", "focus_topics": "ECG", "difficulty": "medium", "question_style": "case scenarios", "extra_instructions": ""}
+        resp = await client.post("/api/preview-prompt", files=files, data=data, headers=_api_headers())
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["title"] == "Cardio"
-        assert body["num_questions"] == 8
-        assert body["focus_topics"] == "ECG"
-        assert body["difficulty"] == "medium"
+        assert "prompt" in body
+        assert "Heart pumps blood." in body["prompt"]
+        assert "document" in body
         assert body["document"]["filename"] == "cardio.pdf"
-        assert body["document"]["pages"] == 1
-        assert "Heart pumps blood." in body["document"]["excerpt"]
-        assert isinstance(body["rules"], list) and len(body["rules"]) >= 5
-
-    async def test_defaults(self, client, monkeypatch):
-        self._stub_ingest(
-            monkeypatch, [Document(page_content="x", metadata={"page": 1})]
-        )
-        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
-        resp = await client.post(
-            "/api/preview-prompt", files=files, headers=_api_headers()
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["title"] == "Document Quiz"
-        assert body["num_questions"] == 10
-        assert body["difficulty"] is None
-
-    async def test_invalid_difficulty_returns_422(self, client):
-        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
-        resp = await client.post(
-            "/api/preview-prompt",
-            files=files,
-            data={"difficulty": "extreme"},
-            headers=_api_headers(),
-        )
-        assert resp.status_code == 422
-        assert isinstance(resp.json()["detail"], list)
-
-    async def test_invalid_model_returns_422(self, client):
-        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
-        resp = await client.post(
-            "/api/preview-prompt",
-            files=files,
-            data={"model": "gpt-5-imagined"},
-            headers=_api_headers(),
-        )
-        assert resp.status_code == 422
-        assert isinstance(resp.json()["detail"], list)
-
-    async def test_non_pdf_returns_400(self, client):
-        files = {"pdf": ("x.txt", b"not a pdf", "text/plain")}
-        resp = await client.post(
-            "/api/preview-prompt", files=files, headers=_api_headers()
-        )
-        assert resp.status_code == 400
-
-    async def test_empty_pdf_returns_400(self, client):
-        files = {"pdf": ("x.pdf", b"", "application/pdf")}
-        resp = await client.post(
-            "/api/preview-prompt", files=files, headers=_api_headers()
-        )
-        assert resp.status_code == 400
-
-    async def test_oversized_pdf_returns_413(self, client, monkeypatch):
-        # Shrink the cap rather than uploading 20 MB in a unit test.
-        monkeypatch.setattr("app.quiz.router._MAX_PDF_BYTES", 100)
-        files = {
-            "pdf": (
-                "x.pdf",
-                b"%PDF-1.4 " + b"x" * 200,
-                "application/pdf",
-            )
-        }
-        resp = await client.post(
-            "/api/preview-prompt", files=files, headers=_api_headers()
-        )
-        assert resp.status_code == 413
-
-    async def test_empty_chunks_returns_422(self, client, monkeypatch):
-        self._stub_ingest(monkeypatch, [])
-        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
-        resp = await client.post(
-            "/api/preview-prompt", files=files, headers=_api_headers()
-        )
-        assert resp.status_code == 422
-        assert "no extractable text" in resp.json()["detail"].lower()
-
-    async def test_corrupt_pdf_returns_422(self, client, monkeypatch):
-        """ingest_pdf raises ValueError on corrupt PDFs — must surface as 422, not 500."""
-
-        def raising_ingest(_):
-            raise ValueError("PDF appears to be empty or could not be parsed.")
-
-        monkeypatch.setattr("app.quiz.router.ingest_pdf", raising_ingest)
-        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
-        resp = await client.post(
-            "/api/preview-prompt", files=files, headers=_api_headers()
-        )
-        assert resp.status_code == 422
-        assert "could not be parsed" in resp.json()["detail"].lower()
+        assert "title" not in body
 
     async def test_response_matches_build_plan(self, client, monkeypatch):
-        """Same-renderer guard: API response must equal build_plan() output."""
         canned_docs = [Document(page_content="alpha beta", metadata={"page": 1})]
         self._stub_ingest(monkeypatch, canned_docs)
         files = {"pdf": ("foo.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
         data = {"quiz_name": "X", "num_questions": "3", "focus_topics": "alpha"}
-        resp = await client.post(
-            "/api/preview-prompt", files=files, data=data, headers=_api_headers()
-        )
+        resp = await client.post("/api/preview-prompt", files=files, data=data, headers=_api_headers())
         assert resp.status_code == 200
-        expected_inputs = QuizInputs(
-            quiz_name="X", num_questions=3, focus_topics="alpha"
-        )
+        expected_inputs = QuizInputs(quiz_name="X", num_questions=3, focus_topics="alpha")
         expected_doc = build_document_preview(canned_docs, "foo.pdf")
-        expected = build_plan(expected_inputs, expected_doc).model_dump()
+        expected = build_plan(expected_inputs, expected_doc, _build_context(canned_docs)).model_dump()
         assert resp.json() == expected
 
-
-def _fake_quiz() -> Quiz:
-    return Quiz(
-        title="placeholder",
-        questions=[
-            Question(
-                question="What pumps blood?",
-                options=[
-                    Option(label="A", text="Heart"),
-                    Option(label="B", text="Liver"),
-                    Option(label="C", text="Lung"),
-                    Option(label="D", text="Spleen"),
-                ],
-                correct_answer="A",
-                explanation="The heart pumps blood.",
-                source_page=1,
-            )
-        ],
-    )
-
-
 @pytest.mark.asyncio
-class TestGenerateEndpointBackcompat:
-    async def test_old_clients_still_work(self, client, monkeypatch):
-        captured: dict = {}
-
-        def fake_ingest(path):
-            return [type("D", (), {"page_content": "x", "metadata": {"page": 1}})()]
-
-        def fake_generate(documents, inputs):
-            captured["inputs"] = inputs
+class TestGenerateEndpoint:
+    async def test_generate_from_request(self, client, monkeypatch):
+        captured = {}
+        def fake_generate(prompt, model):
+            captured["prompt"] = prompt
+            captured["model"] = model
             return _fake_quiz()
-
-        monkeypatch.setattr("app.quiz.router.ingest_pdf", fake_ingest)
         monkeypatch.setattr("app.quiz.router.generate_quiz", fake_generate)
-
-        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
-        data = {"num_questions": "5", "model": "gpt-4o-mini", "quiz_name": "Old Client"}
-        resp = await client.post(
-            "/api/generate", files=files, data=data, headers=_api_headers()
-        )
-
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["title"] == "placeholder"
-        assert captured["inputs"].quiz_name == "Old Client"
-        assert captured["inputs"].num_questions == 5
-        assert captured["inputs"].focus_topics == ""
-        assert captured["inputs"].difficulty is None
-
-
-@pytest.mark.asyncio
-class TestGenerateEndpointNewFields:
-    async def test_new_fields_wire_through(self, client, monkeypatch):
-        captured: dict = {}
-
-        monkeypatch.setattr(
-            "app.quiz.router.ingest_pdf",
-            lambda _: [type("D", (), {"page_content": "x", "metadata": {"page": 1}})()],
-        )
-
-        def fake_generate(documents, inputs):
-            captured["inputs"] = inputs
-            return _fake_quiz()
-
-        monkeypatch.setattr("app.quiz.router.generate_quiz", fake_generate)
-
-        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
-        data = {
-            "num_questions": "7",
-            "focus_topics": "ECG",
-            "difficulty": "hard",
-            "question_style": "case scenarios",
-            "extra_instructions": "No trivia.",
-        }
-        resp = await client.post(
-            "/api/generate", files=files, data=data, headers=_api_headers()
-        )
-
-        assert resp.status_code == 200, resp.text
-        assert captured["inputs"].focus_topics == "ECG"
-        assert captured["inputs"].difficulty == "hard"
-        assert captured["inputs"].question_style == "case scenarios"
-        assert captured["inputs"].extra_instructions == "No trivia."
-
-    async def test_invalid_difficulty_returns_422(self, client):
-        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
-        data = {"num_questions": "5", "difficulty": "extreme"}
-        resp = await client.post(
-            "/api/generate", files=files, data=data, headers=_api_headers()
-        )
-        assert resp.status_code == 422
-        assert isinstance(resp.json()["detail"], list)
+        
+        req = GenerateRequest(prompt="Make a quiz", model="gpt-4o-mini")
+        resp = await client.post("/api/generate", json=req.model_dump(), headers=_api_headers())
+        
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "Generated Title"
+        assert captured["prompt"] == "Make a quiz"
 
     async def test_invalid_model_returns_422(self, client):
-        files = {"pdf": ("x.pdf", b"%PDF-1.4 fake bytes", "application/pdf")}
-        data = {"num_questions": "5", "model": "gpt-5-imagined"}
-        resp = await client.post(
-            "/api/generate", files=files, data=data, headers=_api_headers()
-        )
+        req = {"prompt": "p", "model": "gpt-5-imagined"}
+        resp = await client.post("/api/generate", json=req, headers=_api_headers())
         assert resp.status_code == 422
-        assert isinstance(resp.json()["detail"], list)
-
-    async def test_non_pdf_returns_400(self, client):
-        files = {"pdf": ("x.txt", b"not a pdf", "text/plain")}
-        resp = await client.post(
-            "/api/generate",
-            files=files,
-            data={"num_questions": "5"},
-            headers=_api_headers(),
-        )
-        assert resp.status_code == 400

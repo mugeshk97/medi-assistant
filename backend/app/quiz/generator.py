@@ -77,7 +77,7 @@ def _build_user_prompt_text(inputs: QuizInputs, context: str) -> str:
     title = inputs.quiz_name.strip() or DEFAULT_QUIZ_TITLE
     lines: list[str] = [
         f'Generate a quiz titled "{title}" with {inputs.num_questions} multiple-choice '
-        f"questions based on the following document content.",
+        f"questions based on the provided document content.",
         "",
         "IMPORTANT: Every question must be unique — do not repeat or rephrase any "
         "question. Each question's 4 options must all be distinct from each other.",
@@ -100,7 +100,7 @@ def _build_user_prompt_text(inputs: QuizInputs, context: str) -> str:
         context,
         "--- END DOCUMENT CONTENT ---",
         "",
-        "Generate the quiz now. Use the exact title provided above.",
+        "Generate the quiz now.",
     ]
     return "\n".join(lines)
 
@@ -142,40 +142,29 @@ def _deduplicate_quiz(quiz: Quiz) -> Quiz:
     return quiz
 
 
-def build_plan(inputs: QuizInputs, document: DocumentPreview) -> QuizPlan:
+def build_plan(inputs: QuizInputs, document: DocumentPreview, context: str) -> QuizPlan:
     """Render a structured plan from validated inputs + a document preview.
 
     Pure function — no I/O. Called by the /preview-prompt route after the PDF
     has been ingested into chunks.
     """
-    title = inputs.quiz_name.strip() or DEFAULT_QUIZ_TITLE
+    prompt = _build_user_prompt_text(inputs, context)
     return QuizPlan(
-        title=title,
-        num_questions=inputs.num_questions,
-        model=inputs.model,
-        focus_topics=inputs.focus_topics,
-        difficulty=inputs.difficulty,
-        question_style=inputs.question_style,
-        extra_instructions=inputs.extra_instructions,
         document=document,
-        rules=list(SYSTEM_RULES),
+        prompt=prompt,
     )
 
 
-def generate_quiz(documents: list[Document], inputs: QuizInputs) -> Quiz:
-    """Generate a structured MCQ quiz from PDF chunks using the validated inputs."""
-    context = _build_context(documents)
-    user_text = _build_user_prompt_text(inputs, context)
-    messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user_text)]
+def generate_quiz(prompt: str, model: str) -> Quiz:
+    """Generate a structured MCQ quiz using a pre-generated prompt."""
+    messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)]
 
-    llm = ChatOpenAI(model=inputs.model, temperature=0.3)
+    llm = ChatOpenAI(model=model, temperature=0.3)
     structured_llm = llm.with_structured_output(Quiz)
 
-    final_title = inputs.quiz_name.strip() or DEFAULT_QUIZ_TITLE
-    logger.info(f"Generating {inputs.num_questions} questions using {inputs.model}...")
+    logger.info(f"Generating quiz using {model}...")
     quiz: Quiz = structured_llm.invoke(messages)
 
-    quiz.title = final_title  # always honor the user-provided title (or fallback)
     quiz = _deduplicate_quiz(quiz)
 
     logger.info(f"Generated quiz: '{quiz.title}' with {len(quiz.questions)} questions")

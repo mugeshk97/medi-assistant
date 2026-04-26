@@ -9,9 +9,9 @@ from typing import AsyncIterator
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
-from app.quiz.generator import build_document_preview, build_plan, generate_quiz
+from app.quiz.generator import build_document_preview, build_plan, generate_quiz, _build_context
 from app.quiz.ingest import ingest_pdf
-from app.quiz.models import QuizInputs, QuizPlan
+from app.quiz.models import QuizInputs, QuizPlan, GenerateRequest
 
 router = APIRouter()
 
@@ -85,52 +85,29 @@ async def preview_prompt(
                 detail="PDF produced no extractable text. Try a different document.",
             )
         document = build_document_preview(documents, pdf.filename or "")
-        return build_plan(inputs, document)
+        context = _build_context(documents)
+        return build_plan(inputs, document, context)
 
 
 @router.post("/generate")
-async def generate(
-    pdf: UploadFile = File(...),
-    num_questions: int = Form(default=10),
-    model: str = Form(default="gpt-4o-mini"),
-    quiz_name: str = Form(default=""),
-    focus_topics: str = Form(default=""),
-    difficulty: str = Form(default=""),
-    question_style: str = Form(default=""),
-    extra_instructions: str = Form(default=""),
-):
-    """Upload a PDF and generate an MCQ quiz."""
+async def generate(request: GenerateRequest):
+    """Generate an MCQ quiz using a pre-generated prompt and extracted context."""
     try:
-        inputs = QuizInputs(
-            quiz_name=quiz_name,
-            num_questions=num_questions,
-            model=model,
-            focus_topics=focus_topics,
-            difficulty=difficulty,
-            question_style=question_style,
-            extra_instructions=extra_instructions,
-        )
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=json.loads(e.json()))
-
-    async with _accept_pdf_upload(pdf) as tmp_path:
-        try:
-            documents = ingest_pdf(tmp_path)
-            quiz = generate_quiz(documents, inputs)
-            if not quiz.questions:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        "Quiz generation produced no valid questions. "
-                        "Try a different PDF or fewer questions."
-                    ),
-                )
-            return quiz.model_dump()
-        except HTTPException:
-            raise
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        except Exception:
+        quiz = generate_quiz(request.prompt, request.model)
+        if not quiz.questions:
             raise HTTPException(
-                status_code=500, detail="Quiz generation failed. Please try again."
+                status_code=422,
+                detail=(
+                    "Quiz generation produced no valid questions. "
+                    "Try different instructions or a different document context."
+                ),
             )
+        return quiz.model_dump()
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception("Quiz generation failed")
+        raise HTTPException(
+            status_code=500, detail="Quiz generation failed. Please try again."
+        )
