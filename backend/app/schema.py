@@ -37,7 +37,7 @@ class Thread(BaseModel):
     """Thread model for listing user threads."""
 
     thread_id: str
-    title: str
+    title: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

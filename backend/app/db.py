@@ -1,6 +1,7 @@
 """Database operations with Firestore."""
 
 import logging
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 from google.cloud import firestore_v1
@@ -120,14 +121,21 @@ async def get_thread_by_id(thread_id: str) -> Dict[str, Any] | None:
 
 
 async def get_user_threads(user_id: str) -> List[Dict[str, Any]]:
-    """List threads for user_id."""
+    """List threads for user_id, newest first.
+
+    Sorts in Python so the query needs only a single-field filter and does not
+    require a Firestore composite index on (user_id, updated_at). Documents
+    missing `updated_at` are returned at the end.
+    """
     try:
         threads_ref = db.client.collection("user_threads")
-        query = threads_ref.where(
-            filter=FieldFilter("user_id", "==", user_id)
-        ).order_by("updated_at", direction=firestore_v1.Query.DESCENDING)
-        docs = query.stream()
-        return [doc.to_dict() async for doc in docs]
+        query = threads_ref.where(filter=FieldFilter("user_id", "==", user_id))
+        threads: List[Dict[str, Any]] = [
+            data async for doc in query.stream() if (data := doc.to_dict()) is not None
+        ]
+        epoch = datetime.min.replace(tzinfo=timezone.utc)
+        threads.sort(key=lambda t: t.get("updated_at") or epoch, reverse=True)
+        return threads
     except Exception as e:
         logger.error(
             f"Error getting threads for user {user_id}: {str(e)}", exc_info=True
